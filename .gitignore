@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Local research-host state and credentials
+.research-lab/local/
+runtime/*
+!runtime/.gitkeep
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Large/private research artifacts
+artifacts/*
+!artifacts/.gitkeep
+data/
+models/
+checkpoints/
+*.parquet
+*.feather
+*.arrow
+*.joblib
+*.pkl
+*.pt
+*.pth
+*.onnx
+
+# OS/editors
+.DS_Store
+Thumbs.db
+.vscode/settings.local.json
+.idea/

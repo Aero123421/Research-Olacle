@@ -1,0 +1,29 @@
+name: Research Campaign
+about: One bounded GPT-5.6 Sol High Goal Mode campaign
+labels: ["research:campaign", "agent:executor"]
+body:
+  - type: input
+    id: campaign
+    attributes:
+      label: Campaign ID
+      placeholder: C-001
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and decision to unlock
+    validations:
+      required: true
+  - type: textarea
+    id: conditions
+    attributes:
+      label: Success and withdrawal conditions
+    validations:
+      required: true
+  - type: input
+    id: budget
+    attributes:
+      label: Wall / GPU / cost budget
+    validations:
+      required: true

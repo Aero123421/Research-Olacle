@@ -1,0 +1,204 @@
+# Codex Research Harness
+
+**Turn a vague human objective into an observable, autonomous research loop powered by Codex Goal Mode.**
+
+Codex Research Harness is a Windows-first, GitHub-native repository template for
+running long-horizon research with a strict separation between broad research
+planning and deep campaign execution:
+
+```text
+human mission
+   ↓
+Research Planner
+(rules + EDA + domain landscape + advisors + strategy)
+   ↓
+Campaign Contract
+(goal + evidence criteria + withdrawal + time/GPU/cost budget)
+   ↓
+GPT-5.6 Sol High /goal Research Executor
+(hypotheses + implementation + experiments + analysis)
+   ↓
+evidence-only Handoff
+   ↓
+Research Planner replans
+```
+
+The human is the observer-owner, not the scientific approval gate. GitHub
+Projects and Pull Requests make it easy to see what is running, what evidence has
+changed, how much wall/GPU time has been used, and what happens next—without
+having to follow implementation details.
+
+[日本語 README](README.ja.md)
+
+## What is included
+
+- **Research Planner preset** for broad domain research, competition/rule
+  analysis, reproducible EDA, baseline diagnostics, cross-domain search,
+  strategy portfolios, and bounded advisor consultation.
+- **Research Executor preset** for one fresh GPT-5.6 Sol High `/goal` session per
+  Campaign, with explicit success, withdrawal, and compute budgets.
+- **Durable loop orchestrator** that derives the next Planner/Executor transition
+  from repository state, never from remembered chat.
+- **Context separation** inspired by durable workspace/memory patterns: Planner,
+  Executor, and advisors receive separate bounded Context Packs instead of full
+  transcripts and raw logs.
+- **ChatGPT Project research partner Skill** that lets init choose Codex's
+  built-in browser or Chrome, creates one dedicated ChatGPT Project, verifies an
+  exact Pro model label, and tracks new consultations and true follow-ups.
+- **Claude Code and Grok Build adapters** for independent methodology review and
+  real-time/divergent scouting, selected dynamically at init.
+- **agmsg-compatible communication policy** for local long-lived sessions,
+  including Windows Git Bash guardrails.
+- **GitHub Project control plane** generated from a repository-owned
+  specification: fields, labels, Issues, and browser-completed views.
+- **Windows bootstrap and Doctor** with no required Python runtime dependencies.
+- **Kaggle preset** for safe CLI readiness checks, data inventory, evaluation
+  contracts, and no accidental setup submissions.
+- **Human comprehension layer** with concise Japanese briefs and deterministic
+  Mermaid/SVG/HTML visualizations.
+- **Tests and CI on Windows and Linux**.
+
+## Quick start on the Windows research host
+
+```powershell
+git clone https://github.com/Aero123421/Research-Olacle.git my-research
+cd my-research
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\bootstrap.ps1 -Initialize
+```
+
+Open the folder in Codex in the ChatGPT desktop app, then say:
+
+```text
+このリポジトリを新しいAI Research Labとして初期化してください。
+
+私の要望:
+このKaggleコンペでPrivate Leaderboard 1位を狙いたい。
+技術的な方法は任せる。既存手法だけでなく大胆な案も調べてほしい。
+
+対象:
+https://www.kaggle.com/competitions/...
+
+AGENTS.mdとBOOTSTRAP.mdに従い、読み取り専用の環境調査、必要な面談、
+GitHub Project、ChatGPT研究Project、Doctor、ResearchPlan、最初の
+GPT-5.6 Sol High /goal Campaign開始まで進めてください。
+```
+
+See [BOOTSTRAP.md](BOOTSTRAP.md) for the complete idempotent setup contract.
+
+## Core commands
+
+```powershell
+researchctl init --answers .research-lab\local\init-answers.json
+researchctl doctor --profile full
+researchctl github setup
+researchctl plan create --intent-file mission.txt --target "https://..."
+researchctl context planner
+researchctl campaign create --title "..." --goal "..."
+researchctl campaign validate C-001
+researchctl campaign activate C-001
+researchctl context executor C-001
+researchctl loop checkpoint
+researchctl loop instruction
+researchctl job register --campaign C-001 --name "quick validation" --resource GPU0 --planned-hours 1
+researchctl brief
+researchctl visualize
+```
+
+Run `researchctl --help` for the complete CLI. The Director can call
+`researchctl loop status` at any time to determine whether to run Planner, start
+or monitor one fresh Executor, resume Planner after Handoff, complete the Mission,
+or repair contradictory state.
+
+## Repository as template, not a central service
+
+This repository is intentionally self-contained. Clone it once, then convert the
+clone into a private research repository:
+
+```powershell
+researchctl repo adopt OWNER/NEW-RESEARCH-REPO --visibility private
+```
+
+The original remote becomes `template-upstream`; the new research repository
+becomes `origin`. Secrets, browser sessions, ChatGPT Project URLs, process IDs,
+and host-specific paths stay under ignored local state.
+
+## Research roles
+
+| Role | Scope |
+|---|---|
+| Research Director | Human conversation, control-plane observation, starting/resuming loops |
+| Research Planner | Broad research landscape, EDA, evaluation risk, strategy and Campaign Contract |
+| Research Executor | One deep Goal Mode Campaign to success or withdrawal |
+| ChatGPT Pro partner | General senior research partner; role intentionally not narrowed |
+| Claude auditor | Independent methodology, CV, leakage, and falsification review |
+| Grok scout | X/community signals and divergent hypotheses |
+
+Models and effort labels are discovered during init. Stable roles are stored in
+configuration; actual model IDs and UI labels are local runtime facts.
+
+## Context model
+
+1. **Constitution** — small invariant instructions (`AGENTS.md`).
+2. **Role Skill** — Planner or Executor procedure, loaded only when needed.
+3. **Current Context Pack** — bounded evidence for the current job.
+4. **Durable Memory** — verified strategic findings and decisions on disk.
+5. **Archive** — logs, artifacts, full consultation responses, models, and raw
+   evidence; searched only when a decision requires it.
+
+Planner never receives the Executor's complete conversation. Advisors receive a
+Question Pack, not the whole repository. Campaign state is durable on disk and
+in GitHub, so a session can stop or compact without destroying the research.
+
+## Browser-based ChatGPT Project integration
+
+During init, choose one:
+
+- **Codex built-in browser** — isolated and convenient inside the ChatGPT desktop
+  app.
+- **Chrome** — persistent signed-in profile using the official Codex Chrome
+  extension installed from the ChatGPT/Codex Plugins directory. A dedicated profile is recommended.
+
+The Skill uses semantic UI checks, never blind coordinate macros. It verifies:
+
+- correct ChatGPT Project URL and name
+- project-only memory when available
+- exact configured Pro model label
+- selected-model badge after closing the picker
+- conversation URL and response capture
+
+It never silently falls back to a weaker model. Authentication or UI failure
+marks consultation as degraded; the autonomous Planner–Executor loop continues
+with available evidence and advisors.
+
+## Scope and safety
+
+Scientific research decisions are autonomous. External boundaries remain
+explicit: credentials/MFA, terms acceptance, new paid providers, hard-budget
+increases, public release, and destructive external actions.
+
+Kaggle rules and data-sharing constraints always apply. External advisors receive
+only the minimum necessary context; raw competition data stays local by default.
+
+## Development
+
+```powershell
+.\scripts\bootstrap.ps1
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\researchctl.exe self-test
+.\scripts\verify.ps1
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
+[`docs/architecture.md`](docs/architecture.md), and the reviewed
+[upstream reference list](docs/UPSTREAM_REFERENCES.md).
+
+## Independent project notice
+
+Codex Research Harness is an independent open-source project and is not
+affiliated with or endorsed by OpenAI, Anthropic, xAI, GitHub, Kaggle, or Nous
+Research. Product names and trademarks belong to their respective owners.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

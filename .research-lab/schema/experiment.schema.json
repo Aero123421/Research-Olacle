@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aero123421/Research-Olacle/blob/main/.research-lab/schema/experiment.schema.json",
+  "title": "Experiment Registry Entry",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["experiment_id", "campaign_id", "hypothesis", "status", "git_commit"],
+  "properties": {
+    "experiment_id": {"type": "string", "pattern": "^EXP-[A-Za-z0-9._-]+$"},
+    "campaign_id": {"type": "string", "pattern": "^C-[0-9]{3,}$"},
+    "hypothesis": {"type": "string", "minLength": 1},
+    "status": {"enum": ["planned", "running", "completed", "failed", "invalid", "cancelled"]},
+    "git_commit": {"type": "string", "minLength": 1},
+    "metrics": {"type": "object"},
+    "resources": {"type": "object"},
+    "artifacts": {"type": "array", "items": {"type": ["string", "object"]}}
+  }
+}

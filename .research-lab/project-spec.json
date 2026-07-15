@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "project": {
+    "title_template": "{{repository}} Research Lab",
+    "short_description": "Autonomous research control plane: planner, goal campaigns, evidence, time, and compute."
+  },
+  "labels": [
+    {
+      "name": "research:mission",
+      "color": "5319e7",
+      "description": "Top-level research mission"
+    },
+    {
+      "name": "research:strategy",
+      "color": "0052cc",
+      "description": "Research Planner strategy work"
+    },
+    {
+      "name": "research:campaign",
+      "color": "1d76db",
+      "description": "One bounded Goal Mode campaign"
+    },
+    {
+      "name": "research:evidence",
+      "color": "0e8a16",
+      "description": "Evidence or reproducible result"
+    },
+    {
+      "name": "research:exception",
+      "color": "d93f0b",
+      "description": "External boundary or harness failure"
+    },
+    {
+      "name": "agent:planner",
+      "color": "bfdadc",
+      "description": "Owned by Research Planner"
+    },
+    {
+      "name": "agent:executor",
+      "color": "c5def5",
+      "description": "Owned by Goal Mode Research Executor"
+    }
+  ],
+  "fields": [
+    {
+      "name": "Type",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "Mission",
+        "Strategy",
+        "Campaign",
+        "Evidence",
+        "Exception",
+        "Infrastructure"
+      ]
+    },
+    {
+      "name": "Status",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "Backlog",
+        "Planning",
+        "Ready",
+        "Executing",
+        "Waiting",
+        "Validating",
+        "Reporting",
+        "Replanning",
+        "Done",
+        "Stopped"
+      ]
+    },
+    {
+      "name": "Phase",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "Intake",
+        "EDA",
+        "Landscape",
+        "Contract",
+        "Smoke",
+        "Quick",
+        "Full CV",
+        "Confirm",
+        "Synthesis",
+        "Handoff"
+      ]
+    },
+    {
+      "name": "Health",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "On track",
+        "At risk",
+        "Blocked"
+      ]
+    },
+    {
+      "name": "Accountable Role",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "Director",
+        "Planner",
+        "Executor",
+        "Auditor",
+        "Scout",
+        "System"
+      ]
+    },
+    {
+      "name": "Active Runtime",
+      "type": "TEXT"
+    },
+    {
+      "name": "Current Action",
+      "type": "TEXT"
+    },
+    {
+      "name": "Next Action",
+      "type": "TEXT"
+    },
+    {
+      "name": "Planned Start",
+      "type": "DATE"
+    },
+    {
+      "name": "Target Date",
+      "type": "DATE"
+    },
+    {
+      "name": "Forecast Date",
+      "type": "DATE"
+    },
+    {
+      "name": "ETA Window",
+      "type": "TEXT"
+    },
+    {
+      "name": "Next Checkpoint",
+      "type": "DATE"
+    },
+    {
+      "name": "Resource",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "None",
+        "CPU",
+        "GPU0",
+        "GPU1",
+        "Kaggle",
+        "SSH GPU",
+        "Colab",
+        "Web"
+      ]
+    },
+    {
+      "name": "GPU Planned h",
+      "type": "NUMBER"
+    },
+    {
+      "name": "GPU Actual h",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Research Signal",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "Unknown",
+        "Weak",
+        "Promising",
+        "Competitive",
+        "Breakthrough"
+      ]
+    },
+    {
+      "name": "Attention",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "None",
+        "Read",
+        "External action",
+        "Urgent"
+      ]
+    },
+    {
+      "name": "Outcome",
+      "type": "SINGLE_SELECT",
+      "options": [
+        "Success",
+        "Promising",
+        "Rejected",
+        "Surprise",
+        "Blocked",
+        "Budget exhausted",
+        "Invalid"
+      ]
+    }
+  ],
+  "views": [
+    {
+      "name": "00 Cockpit",
+      "layout": "table",
+      "filter": "-status:Done",
+      "purpose": "Low-cognitive-load human overview"
+    },
+    {
+      "name": "01 Now",
+      "layout": "board",
+      "group_by": "Status",
+      "filter": "status:Planning,Ready,Executing,Waiting,Validating,Reporting,Replanning",
+      "purpose": "What every agent is doing now"
+    },
+    {
+      "name": "02 Timeline",
+      "layout": "roadmap",
+      "filter": "type:Strategy,Campaign",
+      "purpose": "Plan, forecast, dependencies, and deadlines"
+    },
+    {
+      "name": "03 GPU Queue",
+      "layout": "table",
+      "filter": "resource:GPU0,GPU1,Kaggle,\"SSH GPU\",Colab",
+      "purpose": "Current and next compute allocations"
+    },
+    {
+      "name": "04 By Agent",
+      "layout": "table",
+      "group_by": "Accountable Role",
+      "filter": "-status:Done",
+      "purpose": "Who owns each active item"
+    },
+    {
+      "name": "05 Evidence",
+      "layout": "table",
+      "filter": "type:Evidence,Campaign",
+      "purpose": "How the strategy changed based on evidence"
+    },
+    {
+      "name": "06 Exceptions",
+      "layout": "table",
+      "filter": "attention:Read,\"External action\",Urgent",
+      "purpose": "Only failures or external boundaries needing observation"
+    },
+    {
+      "name": "07 Results",
+      "layout": "table",
+      "filter": "status:Done",
+      "purpose": "Completed campaigns and outcomes"
+    }
+  ],
+  "seed_issues": [
+    {
+      "key": "MISSION",
+      "title": "[Mission] Preserve the human's original research intent",
+      "labels": [
+        "research:mission"
+      ],
+      "body": "The uncompressed original intent lives in `research/USER_INTENT.md`. This issue is the top-level anchor for strategy and campaigns."
+    },
+    {
+      "key": "INITIAL-PLAN",
+      "title": "[Strategy] Build the initial research landscape and first Campaign Contract",
+      "labels": [
+        "research:strategy",
+        "agent:planner"
+      ],
+      "body": "Research Planner must inspect rules, data, EDA, baseline, domain knowledge, adjacent fields, and independent advisors before issuing the first Goal Mode campaign."
+    },
+    {
+      "key": "SETUP-READINESS",
+      "title": "[Infrastructure] Complete research-lab readiness checks",
+      "labels": [
+        "research:exception"
+      ],
+      "body": "Track GitHub Project, agent census, browser/ChatGPT Project, Kaggle, compute, and recovery checks. Close only after `researchctl doctor --profile full` has no blocking failures."
+    }
+  ]
+}

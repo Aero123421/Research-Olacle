@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "generated_at": null,
+  "profile": "not_initialized",
+  "agents": [],
+  "note": "Bootstrap replaces this commit-safe placeholder. Authentication secrets, browser URLs, command output, and profile paths are never stored here."
+}

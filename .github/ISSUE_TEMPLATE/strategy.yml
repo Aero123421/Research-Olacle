@@ -1,0 +1,22 @@
+name: Research Strategy
+about: Planner landscape, evidence synthesis, and Campaign selection
+labels: ["research:strategy", "agent:planner"]
+body:
+  - type: textarea
+    id: uncertainty
+    attributes:
+      label: Largest current uncertainty
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence pack and prior Handoffs
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Primary, Hedge, Wildcard, and strongest counterargument
+    validations:
+      required: true

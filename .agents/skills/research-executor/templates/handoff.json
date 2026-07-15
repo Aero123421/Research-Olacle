@@ -1,0 +1,19 @@
+{
+  "campaign_id": "C-001",
+  "outcome": "rejected_with_evidence",
+  "summary": "Replace with a concise evidence-backed result.",
+  "evidence": [
+    {
+      "claim": "A concrete claim",
+      "artifact": "research/campaigns/C-001/evidence/example.md",
+      "commit": "FULL_OR_UNAMBIGUOUS_COMMIT"
+    }
+  ],
+  "confirmed_findings": [],
+  "rejected_hypotheses": [],
+  "unexpected_observations": [],
+  "strategic_implications": [],
+  "executor_recommendations": [],
+  "resources_actual": {"wall_hours": 0, "gpu_hours": 0, "cost_jpy": 0},
+  "limitations": []
+}

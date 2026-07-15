@@ -1,0 +1,3 @@
+# Project-scoped Codex settings. Codex loads this only after the project is trusted.
+[features]
+goals = true

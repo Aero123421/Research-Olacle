@@ -1,0 +1,44 @@
+{
+  "profile": "kaggle",
+  "language": "ja",
+  "user_level": {
+    "github": "beginner",
+    "git": "beginner",
+    "statistics": "beginner",
+    "machine_learning": "beginner",
+    "agent_operations": "advanced"
+  },
+  "communication": {
+    "default_depth": "executive",
+    "explain_first_use_terms": true,
+    "max_new_terms_per_update": 2,
+    "prefer_visuals": true,
+    "update_policy": "event_driven"
+  },
+  "browser": {
+    "mode": "built_in",
+    "chrome_profile": null
+  },
+  "chatgpt": {
+    "preferred_model_labels": ["Pro"],
+    "allow_silent_fallback": false,
+    "project_only_memory": true
+  },
+  "compute": {
+    "local_gpu_max_hours_per_day": 20.0,
+    "campaign_gpu_hours_default": 8.0,
+    "paid_compute_enabled": false,
+    "paid_compute_monthly_limit_jpy": 0.0,
+    "paid_compute_per_job_limit_jpy": 0.0
+  },
+  "autonomy": {
+    "research_decisions": "autonomous",
+    "campaign_start": "autonomous_after_validation",
+    "campaign_stop": "autonomous",
+    "replanning": "autonomous",
+    "kaggle_submission": "policy_defined",
+    "new_paid_provider": "external_action_required",
+    "credentials": "external_action_required",
+    "destructive_actions": "external_action_required"
+  }
+}

@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+# Keep Windows launchers native after checkout.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Treat generated/binary research artifacts as binary when committed deliberately.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.parquet binary
+*.arrow binary
+*.feather binary

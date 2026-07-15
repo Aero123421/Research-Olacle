@@ -1,0 +1,19 @@
+name: Research Mission
+about: Preserve a high-level human research objective
+labels: ["research:mission"]
+body:
+  - type: textarea
+    id: intent
+    attributes:
+      label: Original human intent
+      description: Preserve the wording and ambiguity; do not prematurely select a technique.
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target / competition / research object
+  - type: input
+    id: deadline
+    attributes:
+      label: External deadline

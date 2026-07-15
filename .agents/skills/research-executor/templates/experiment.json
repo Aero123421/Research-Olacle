@@ -1,0 +1,10 @@
+{
+  "experiment_id": "EXP-C001-001",
+  "campaign_id": "C-001",
+  "hypothesis": "A falsifiable hypothesis",
+  "status": "completed",
+  "git_commit": "FULL_OR_UNAMBIGUOUS_COMMIT",
+  "metrics": {},
+  "resources": {"wall_hours": 0, "gpu_hours": 0, "cost_jpy": 0},
+  "artifacts": []
+}

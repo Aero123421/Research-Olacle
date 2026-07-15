@@ -1,0 +1,17 @@
+[lab]
+name = "Codex Research Harness"
+timezone = "Asia/Tokyo"
+human_language = "ja"
+profile = "general"
+
+[research]
+planner_executor_separation = true
+human_scientific_approval_required = false
+campaign_owner = "gpt-5.6-sol-high-goal"
+
+[compute]
+minimum_free_disk_gb = 20
+
+[security]
+commit_credentials = false
+external_data_default = "summary_only"

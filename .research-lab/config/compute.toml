@@ -1,0 +1,37 @@
+[local]
+enabled = true
+primary_host = "windows"
+max_parallel_gpu_jobs = 1
+max_gpu_hours_per_day = 20.0
+
+[campaign_defaults]
+wall_hours = 12.0
+gpu_hours = 6.0
+paid_compute_jpy = 0.0
+
+[paid_compute]
+enabled = false
+monthly_hard_limit_jpy = 0.0
+per_job_hard_limit_jpy = 0.0
+require_auto_shutdown = true
+require_cost_metering = true
+
+[backends.local_windows]
+enabled = true
+priority = 1
+
+[backends.kaggle_notebook]
+enabled = false
+priority = 2
+role = "submission_and_environment_reproduction"
+
+[backends.ssh_gpu]
+enabled = false
+priority = 3
+role = "long_running_overflow"
+
+[backends.colab]
+enabled = false
+priority = 4
+role = "opportunistic_only"
+critical_path_allowed = false

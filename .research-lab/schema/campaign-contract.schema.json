@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aero123421/Research-Olacle/blob/main/.research-lab/schema/campaign-contract.schema.json",
+  "title": "Campaign Contract",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "contract_status",
+    "campaign_id",
+    "title",
+    "mission",
+    "goal",
+    "why_now",
+    "decision_to_unlock",
+    "scope",
+    "success_conditions",
+    "withdrawal_conditions",
+    "budget",
+    "checkpoint_policy",
+    "evaluation_contract",
+    "fixed_constraints",
+    "forbidden_detours",
+    "evidence_inputs",
+    "required_outputs",
+    "owner"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "contract_status": {"enum": ["draft", "ready"]},
+    "campaign_id": {"type": "string", "pattern": "^C-[0-9]{3,}$"},
+    "title": {"type": "string", "minLength": 1},
+    "mission": {"type": "string", "minLength": 1},
+    "goal": {"type": "string", "minLength": 1},
+    "why_now": {"type": "string", "minLength": 1},
+    "decision_to_unlock": {"type": "string", "minLength": 1},
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["in", "out"],
+      "properties": {
+        "in": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "out": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "success_conditions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "withdrawal_conditions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wall_hours", "gpu_hours", "paid_compute_jpy"],
+      "properties": {
+        "wall_hours": {"type": "number", "exclusiveMinimum": 0},
+        "gpu_hours": {"type": "number", "minimum": 0},
+        "paid_compute_jpy": {"type": "number", "minimum": 0}
+      }
+    },
+    "checkpoint_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["budget_fractions", "events"],
+      "properties": {
+        "budget_fractions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}
+        },
+        "events": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "evaluation_contract": {"type": "string", "minLength": 1},
+    "fixed_constraints": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "forbidden_detours": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "evidence_inputs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "required_outputs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "owner": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["runtime", "model", "effort"],
+      "properties": {
+        "runtime": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "effort": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

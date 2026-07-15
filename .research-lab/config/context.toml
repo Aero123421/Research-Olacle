@@ -1,0 +1,22 @@
+[budgets]
+planner_max_chars = 100000
+executor_max_chars = 80000
+advisor_max_chars = 50000
+strategy_memory_max_chars = 24000
+campaign_state_max_chars = 8000
+
+[checkpoint]
+budget_fractions = [0.25, 0.50, 0.80]
+events = [
+  "phase_change",
+  "material_evidence",
+  "strategy_conflict",
+  "before_pause",
+  "before_context_compaction",
+]
+
+[retention]
+planner_campaign_reports = 8
+planner_consultation_summaries = 12
+advisor_question_scope = "minimum_necessary"
+include_raw_logs_by_default = false

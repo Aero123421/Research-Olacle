@@ -1,0 +1,35 @@
+[roles.research_director]
+runtime = "codex-app"
+purpose = "Human conversation, control-plane observation, loop supervision"
+effort_class = "deep"
+
+[roles.research_planner]
+runtime = "codex"
+purpose = "Broad domain research, EDA, strategy synthesis, Campaign Contract"
+effort_class = "max"
+context_policy = "planner"
+
+[roles.research_executor]
+runtime = "codex-goal"
+model_preference = ["gpt-5.6-sol"]
+effort_preference = ["high"]
+purpose = "One campaign pursued autonomously to success or withdrawal"
+context_policy = "executor"
+
+[roles.chatgpt_research_partner]
+runtime = "browser"
+purpose = "General senior research partner with unrestricted research consultation scope"
+model_label_preference = ["Pro"]
+allow_silent_fallback = false
+
+[roles.methodology_auditor]
+runtime = "claude-code"
+purpose = "Independent methodology, CV, leakage, and falsification audit"
+model_selection = "best-available-at-init"
+effort_class = "deep"
+
+[roles.realtime_scout]
+runtime = "grok-build"
+purpose = "X/community search and divergent hypotheses"
+model_selection = "best-available-at-init"
+effort_class = "deep"
