@@ -11,9 +11,11 @@ from .bootstrap import initialize_repository
 from .brief import generate_human_brief
 from .campaign import (
     activate_campaign,
+    claim_executor,
     complete_campaign,
     create_campaign,
     finalize_campaign_contract,
+    heartbeat_executor,
     list_campaign_ids,
     update_campaign_state,
     validate_contract_file,
@@ -32,7 +34,7 @@ from .consultation import (
     verify_chatgpt_project,
 )
 from .context import build_executor_context, build_planner_context, check_context_sizes
-from .doctor import doctor_exit_code, run_doctor
+from .doctor import doctor_exit_code, doctor_output_paths, run_doctor
 from .eda import profile_dataset
 from .experiments import read_experiments, register_experiment
 from .github import GitHubClient, write_project_plan
@@ -89,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init", help="Initialize local research-lab state idempotently")
     init.add_argument("--answers", help="JSON file with setup answers")
     init.add_argument("--force", action="store_true")
+    init.add_argument(
+        "--materialize",
+        action="store_true",
+        help="Write reviewable tracked setup files now; normally adoption does this after remote setup",
+    )
 
     doctor = sub.add_parser("doctor", help="Probe repository, agents, services, and compute")
     doctor.add_argument("--profile", choices=["quick", "core", "agents", "kaggle", "full"], default="full")
@@ -152,6 +159,22 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("campaign_id")
     activate = campaign_sub.add_parser("activate")
     activate.add_argument("campaign_id")
+    claim = campaign_sub.add_parser(
+        "claim-executor", help="Atomically claim a ready Campaign before launching Goal Mode"
+    )
+    claim.add_argument("campaign_id")
+    claim.add_argument("--session-id")
+    claim.add_argument("--owner", default="codex-app-director")
+    claim.add_argument("--worktree")
+    claim.add_argument("--lease-minutes", type=int, default=180)
+    claim.add_argument("--take-over-stale", action="store_true")
+    executor_heartbeat = campaign_sub.add_parser(
+        "executor-heartbeat", help="Renew the active Goal Mode executor lease"
+    )
+    executor_heartbeat.add_argument("campaign_id")
+    executor_heartbeat.add_argument("--claim-id", required=True)
+    executor_heartbeat.add_argument("--session-id")
+    executor_heartbeat.add_argument("--lease-minutes", type=int, default=180)
     checkpoint = campaign_sub.add_parser("checkpoint")
     checkpoint.add_argument("campaign_id")
     checkpoint.add_argument("--patch", required=True, help="JSON object or file")
@@ -217,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
     job_register.add_argument("--name", required=True)
     job_register.add_argument("--resource", required=True)
     job_register.add_argument("--planned-hours", type=float, required=True)
+    job_register.add_argument("--planned-cost-jpy", type=float, default=0.0)
+    job_register.add_argument(
+        "--finalization",
+        action="store_true",
+        help="Allow only confirmation/reporting work after the 80%% budget gate",
+    )
     job_register.add_argument("--backend", default="local_windows")
     job_register.add_argument("--command-summary")
     job_register.add_argument("--after")
@@ -228,6 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     job_heartbeat.add_argument("--progress")
     job_heartbeat.add_argument("--wall-hours", type=float)
     job_heartbeat.add_argument("--gpu-hours", type=float)
+    job_heartbeat.add_argument("--cost-jpy", type=float)
     job_finish = job_sub.add_parser("finish")
     job_finish.add_argument("job_id")
     job_finish.add_argument("--status", choices=["completed", "failed", "cancelled"], default="completed")
@@ -235,6 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
     job_finish.add_argument("--failure-summary")
     job_finish.add_argument("--wall-hours", type=float)
     job_finish.add_argument("--gpu-hours", type=float)
+    job_finish.add_argument("--cost-jpy", type=float)
     job_list = job_sub.add_parser("list")
     job_list.add_argument("--campaign")
     job_list.add_argument("--status")
@@ -265,7 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
 def command_init(args: argparse.Namespace) -> int:
     paths = _paths(args)
     answers = read_json(Path(args.answers)) if args.answers else None
-    _print_json(initialize_repository(paths, answers=answers, force=args.force))
+    _print_json(initialize_repository(paths, answers=answers, force=args.force, materialize=args.materialize))
     return 0
 
 
@@ -276,7 +307,8 @@ def command_doctor(args: argparse.Namespace) -> int:
     else:
         for result in report.results:
             print(f"{result.status.upper():4} {result.name:24} {result.summary}")
-        print(f"\nReadiness report: {_paths(args).setup / 'READINESS.md'}")
+        _, readiness_path = doctor_output_paths(_paths(args))
+        print(f"\nReadiness report: {readiness_path}")
     return doctor_exit_code(report, strict=args.strict)
 
 
@@ -339,10 +371,10 @@ def command_context(args: argparse.Namespace) -> int:
     paths = _paths(args)
     if args.context_command == "planner":
         result = build_planner_context(paths)
-        _print_json(result.__dict__ | {"output": str(result.output)})
+        _print_json(result.__dict__ | {"output": str(result.output), "manifest": str(result.manifest)})
     elif args.context_command == "executor":
         result = build_executor_context(paths, args.campaign_id)
-        _print_json(result.__dict__ | {"output": str(result.output)})
+        _print_json(result.__dict__ | {"output": str(result.output), "manifest": str(result.manifest)})
     else:
         warnings = check_context_sizes(paths)
         _print_json({"warnings": warnings, "ok": not warnings})
@@ -367,6 +399,28 @@ def command_campaign(args: argparse.Namespace) -> int:
         _print_json(finalize_campaign_contract(paths, args.campaign_id))
     elif args.campaign_command == "activate":
         _print_json(activate_campaign(paths, args.campaign_id))
+    elif args.campaign_command == "claim-executor":
+        _print_json(
+            claim_executor(
+                paths,
+                args.campaign_id,
+                session_id=args.session_id,
+                owner=args.owner,
+                worktree=args.worktree,
+                lease_minutes=args.lease_minutes,
+                allow_stale_takeover=args.take_over_stale,
+            )
+        )
+    elif args.campaign_command == "executor-heartbeat":
+        _print_json(
+            heartbeat_executor(
+                paths,
+                args.campaign_id,
+                claim_id=args.claim_id,
+                session_id=args.session_id,
+                lease_minutes=args.lease_minutes,
+            )
+        )
     elif args.campaign_command == "checkpoint":
         _print_json(update_campaign_state(paths, args.campaign_id, _json_arg(args.patch)))
     elif args.campaign_command == "complete":
@@ -466,6 +520,8 @@ def command_job(args: argparse.Namespace) -> int:
                 name=args.name,
                 resource=args.resource,
                 planned_hours=args.planned_hours,
+                planned_cost_jpy=args.planned_cost_jpy,
+                finalization=args.finalization,
                 backend=args.backend,
                 command_summary=args.command_summary,
                 queue_after=args.after,
@@ -482,6 +538,7 @@ def command_job(args: argparse.Namespace) -> int:
                 progress=args.progress,
                 actual_wall_hours=args.wall_hours,
                 actual_gpu_hours=args.gpu_hours,
+                actual_cost_jpy=args.cost_jpy,
             )
         )
     elif args.job_command == "finish":
@@ -494,6 +551,7 @@ def command_job(args: argparse.Namespace) -> int:
                 failure_summary=args.failure_summary,
                 actual_wall_hours=args.wall_hours,
                 actual_gpu_hours=args.gpu_hours,
+                actual_cost_jpy=args.cost_jpy,
             )
         )
     elif args.job_command == "list":
@@ -552,7 +610,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "job": command_job,
         "experiment": command_experiment,
         "eda": command_eda,
-        "brief": lambda value: (print(generate_human_brief(_paths(value))) or 0),
+        "brief": lambda value: print(generate_human_brief(_paths(value))) or 0,
         "visualize": lambda value: (
             _print_json({"generated": [str(path) for path in generate_all(_paths(value))]}) or 0
         ),

@@ -1,0 +1,4 @@
+title = "Codex Research Harness secret scanning"
+
+[extend]
+useDefault = true

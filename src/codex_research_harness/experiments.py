@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .locking import lab_lock
 from .models import LabPaths
 from .schema import validate_experiment, validate_or_raise
 from .utils import iso_now, safe_relpath
@@ -21,13 +22,6 @@ def _hash_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
 def register_experiment(paths: LabPaths, value: dict[str, Any]) -> dict[str, Any]:
     value = dict(value)
     validate_or_raise(value, validate_experiment)
-    existing = {item.get("experiment_id"): item for item in read_experiments(paths)}
-    experiment_id = value["experiment_id"]
-    if experiment_id in existing:
-        if existing[experiment_id] == value:
-            return existing[experiment_id]
-        raise ValueError(f"Experiment {experiment_id} is already registered; records are append-only")
-
     campaign_dir = paths.campaigns / value["campaign_id"]
     if not campaign_dir.exists():
         raise ValueError(f"Unknown campaign {value['campaign_id']}")
@@ -50,13 +44,22 @@ def register_experiment(paths: LabPaths, value: dict[str, Any]) -> dict[str, Any
                 }
             )
         elif isinstance(raw, dict):
-            artifacts.append(raw)
+            artifacts.append(dict(raw))
     value["artifacts"] = artifacts
-    index = paths.experiments / "index.jsonl"
-    index.parent.mkdir(parents=True, exist_ok=True)
-    with index.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
-    return value
+
+    with lab_lock(paths, "experiments-index"):
+        existing = {item.get("experiment_id"): item for item in read_experiments(paths)}
+        experiment_id = value["experiment_id"]
+        if experiment_id in existing:
+            if existing[experiment_id] == value:
+                return existing[experiment_id]
+            raise ValueError(f"Experiment {experiment_id} is already registered; records are append-only")
+        index = paths.experiments / "index.jsonl"
+        index.parent.mkdir(parents=True, exist_ok=True)
+        with index.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
+            handle.flush()
+        return value
 
 
 def read_experiments(paths: LabPaths) -> list[dict[str, Any]]:

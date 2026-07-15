@@ -48,8 +48,8 @@ The state machine returns one of:
 
 - `start_planner` — no durable ResearchPlan exists
 - `run_planner` — the plan or selected Campaign Contract is incomplete
-- `start_executor` — a ready Campaign has its bounded Context Pack and Goal prompt
-- `monitor_executor` — a Campaign is active
+- `start_executor` — a ready Campaign has a hash-verified Context Pack manifest and Goal prompt; the Director must atomically claim it before launch
+- `monitor_executor` — a Campaign has one active Executor claim/lease
 - `resume_planner` — a Campaign finished with a validated Handoff
 - `mission_complete` — the latest ResearchPlan is complete
 - `repair_state` — durable files are missing or contradictory
@@ -58,3 +58,13 @@ The command deliberately does not start a model session. Codex App remains the
 Director and executes the rendered instruction using the configured model and
 Skill. This keeps orchestration inspectable and avoids hiding scientific state in
 a daemon or chat transcript.
+
+
+## Executor ownership and resource boundary
+
+Before launching `/goal`, run `researchctl campaign claim-executor`. The command
+atomically records the session, owner, worktree, heartbeat, and lease. Duplicate
+live claims are rejected. Every compute job is authorized against the Campaign,
+local daily GPU, backend, paid-compute, and physical-resource policies before
+registration and again before start. At the 80% gate, only jobs explicitly
+marked as finalization are allowed.

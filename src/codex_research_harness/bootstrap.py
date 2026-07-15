@@ -65,6 +65,7 @@ def initialize_repository(
     *,
     answers: dict[str, Any] | None = None,
     force: bool = False,
+    materialize: bool = False,
 ) -> dict[str, Any]:
     """Create or resume repository-local setup state.
 
@@ -80,9 +81,6 @@ def initialize_repository(
     existing = {} if force else read_json(state_path, default={})
     previous_answers = {} if force else read_json(answers_path, default={})
 
-    if existing and existing.get("initialized") and answers is None and not force:
-        return existing
-
     values = _merge(DEFAULT_ANSWERS, previous_answers if isinstance(previous_answers, dict) else {})
     values = _merge(values, answers or {})
     browser = values.get("browser", {})
@@ -91,10 +89,16 @@ def initialize_repository(
         configure_browser(paths, mode=browser_mode, chrome_profile=browser.get("chrome_profile"))
 
     now = iso_now()
+    template_version_path = paths.root / "TEMPLATE_VERSION"
+    template_version = (
+        template_version_path.read_text(encoding="utf-8").strip()
+        if template_version_path.exists()
+        else "unknown"
+    )
     instance = {
         "schema_version": 1,
         "initialized": True,
-        "template_version": "0.1.0",
+        "template_version": template_version,
         "root": str(paths.root),
         "host_platform": platform.platform(),
         "profile": values["profile"],
@@ -102,16 +106,56 @@ def initialize_repository(
         "stage": "environment_discovery" if browser_mode else "setup_interview",
         "browser_mode": browser_mode or "unselected",
         "created_at": existing.get("created_at", now) if isinstance(existing, dict) else now,
+        "materialized": bool(existing.get("materialized", False)) if isinstance(existing, dict) else False,
         "updated_at": now,
     }
     atomic_write_json(state_path, instance)
     atomic_write_json(answers_path, values)
-    _write_human_profile(paths, values)
-    _write_compute_policy(paths, values)
-    _write_autonomy_policy(paths, values)
-    _write_agent_roster(paths, values)
-    _write_setup_report(paths, values, instance)
+    if materialize:
+        materialize_repository_configuration(paths, answers=values, instance=instance)
+        instance["materialized"] = True
+        instance["materialized_at"] = iso_now()
+        instance["updated_at"] = instance["materialized_at"]
+        atomic_write_json(state_path, instance)
     return instance
+
+
+def materialize_repository_configuration(
+    paths: LabPaths,
+    *,
+    answers: dict[str, Any] | None = None,
+    instance: dict[str, Any] | None = None,
+) -> list[str]:
+    """Write committed human-readable setup files after repository adoption.
+
+    Discovery/interview state remains under ``.research-lab/local`` until the
+    template clone has been adopted. This keeps the documented init → adopt
+    sequence clean while still producing reviewable setup files in the new
+    research repository.
+    """
+
+    paths.ensure_runtime()
+    values = answers or read_json(paths.local / "answers.json", default={})
+    if not isinstance(values, dict) or not values:
+        raise ValueError("Initialization answers are missing; run researchctl init first")
+    merged = _merge(DEFAULT_ANSWERS, values)
+    current_instance = instance or read_json(paths.local / "instance.json", default={})
+    if not isinstance(current_instance, dict) or not current_instance:
+        raise ValueError("Initialization state is missing; run researchctl init first")
+
+    _write_human_profile(paths, merged)
+    _write_compute_policy(paths, merged)
+    _write_autonomy_policy(paths, merged)
+    _write_agent_roster(paths, merged)
+    _write_setup_report(paths, merged, current_instance)
+    return [
+        "research/human/PROFILE.json",
+        "research/setup/HUMAN_PROFILE.md",
+        "research/setup/COMPUTE_POLICY.md",
+        "research/setup/AUTONOMY_POLICY.md",
+        "research/setup/AGENT_ROSTER.md",
+        "research/setup/SETUP_REPORT.md",
+    ]
 
 
 def _write_human_profile(paths: LabPaths, values: dict[str, Any]) -> None:

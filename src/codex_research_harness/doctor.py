@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .config import load_lab_config
 from .models import DoctorReport, LabPaths, ProbeResult
 from .probes import build_probes
-from .utils import atomic_write_json, atomic_write_text, markdown_table
+from .utils import atomic_write_json, atomic_write_text, markdown_table, read_json
 
 STATUS_ICON = {"pass": "✅", "warn": "⚠️", "fail": "❌", "skip": "⏭️"}
+
+
+def doctor_output_paths(paths: LabPaths) -> tuple[Path, Path]:
+    """Return commit-safe output paths for the current bootstrap stage.
+
+    Before repository adoption/materialization, Doctor must not dirty the
+    template clone. Once setup has been materialized in the adopted research
+    repository, the bounded census/readiness reports become reviewable tracked
+    state under ``research/setup``.
+    """
+
+    instance = read_json(paths.local / "instance.json", default={})
+    materialized = isinstance(instance, dict) and bool(instance.get("materialized"))
+    base = paths.setup if materialized else paths.local / "setup"
+    return base / "AGENT_CENSUS.json", base / "READINESS.md"
 
 
 def run_doctor(paths: LabPaths, *, profile: str = "full") -> DoctorReport:
@@ -29,8 +45,9 @@ def run_doctor(paths: LabPaths, *, profile: str = "full") -> DoctorReport:
     report = DoctorReport(results=results, profile=profile)
     paths.ensure_runtime()
     atomic_write_json(paths.runtime / "doctor.json", report.to_dict())
-    atomic_write_json(paths.setup / "AGENT_CENSUS.json", render_safe_agent_census(report))
-    atomic_write_text(paths.setup / "READINESS.md", render_doctor_markdown(report))
+    census_path, readiness_path = doctor_output_paths(paths)
+    atomic_write_json(census_path, render_safe_agent_census(report))
+    atomic_write_text(readiness_path, render_doctor_markdown(report))
     return report
 
 

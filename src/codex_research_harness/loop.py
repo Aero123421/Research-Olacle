@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .context import sha256_file, validate_context_pack
 from .models import LabPaths
 from .plans import list_plan_ids
 from .utils import atomic_write_json, atomic_write_text, iso_now, read_json
@@ -138,10 +139,22 @@ def inspect_research_loop(paths: LabPaths) -> LoopDecision:
     if campaign_status == "ready":
         context_pack = campaign_dir / "CONTEXT_PACK.md"
         goal_prompt = campaign_dir / "GOAL_PROMPT.md"
-        if not context_pack.exists() or not goal_prompt.exists():
+        issues = validate_context_pack(
+            paths,
+            context_pack,
+            expected_role="research-executor",
+            expected_metadata={
+                "campaign_id": campaign_id,
+                "contract_sha256": sha256_file(campaign_dir / "CONTRACT.json"),
+            },
+        )
+        if not goal_prompt.exists():
+            issues.append("missing Goal Mode launch prompt")
+        if issues:
             return _decision(
                 "run_planner",
-                f"Campaign {campaign_id} is ready but its bounded Executor pack is incomplete.",
+                f"Campaign {campaign_id} is ready but its bounded Executor pack is invalid: "
+                + "; ".join(issues),
                 plan_id=plan_id,
                 campaign_id=campaign_id,
                 plan_status=plan_status,
@@ -149,7 +162,7 @@ def inspect_research_loop(paths: LabPaths) -> LoopDecision:
             )
         return _decision(
             "start_executor",
-            f"Start one fresh GPT-5.6 Sol High Goal Mode session for {campaign_id}.",
+            f"Atomically claim, then start one fresh GPT-5.6 Sol High Goal Mode session for {campaign_id}.",
             plan_id=plan_id,
             campaign_id=campaign_id,
             plan_status=plan_status,
@@ -229,10 +242,11 @@ parallel portfolio is explicitly budgeted.
             + f"""
 ## Director action
 
-Open a **fresh** Codex session for `{decision.campaign_id}`, select GPT-5.6 Sol
-High, load the `research-executor` Skill, read
+First run `researchctl campaign claim-executor {decision.campaign_id}`. Only the
+process that receives the persisted claim may open a **fresh** Codex session,
+select GPT-5.6 Sol High, load the `research-executor` Skill, read
 `research/campaigns/{decision.campaign_id}/GOAL_PROMPT.md`, and invoke `/goal`.
-Never reuse an Executor session from another Campaign.
+Never reuse an Executor session from another Campaign. A second claim must fail.
 """
         )
     if action == "monitor_executor":

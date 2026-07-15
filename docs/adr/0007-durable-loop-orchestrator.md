@@ -11,6 +11,6 @@ The Codex App Director uses `researchctl loop` and the `research-loop` Skill to 
 ## Consequences
 
 - A restart or context compaction can recover the loop without replaying chats.
-- A ready Campaign starts one fresh GPT-5.6 Sol High `/goal` session.
+- A ready Campaign starts one fresh GPT-5.6 Sol High `/goal` session only after an atomic Executor claim.
 - A completed Campaign cannot return to Planner without a validated Handoff.
 - UI automation remains a thin actuator; deterministic transition logic is tested in Python.

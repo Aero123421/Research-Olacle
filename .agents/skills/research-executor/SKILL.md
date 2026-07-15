@@ -12,7 +12,8 @@ One Campaign, one accountable writer, one fresh Goal Mode context.
 Do not start unless all are true:
 
 - `CONTRACT.json` validates
-- `CONTEXT_PACK.md` exists
+- `CONTEXT_PACK.md` and its integrity manifest validate against the current Contract
+- the Campaign has been atomically claimed for this exact session/worktree
 - fixed evaluation/CV contract is readable
 - start commit/worktree/PR are identified
 - time, GPU, and cost meters are available
@@ -24,7 +25,8 @@ transcripts.
 
 ## Goal Mode
 
-Use GPT-5.6 Sol High and start `/goal` from `GOAL_PROMPT.md`. You own:
+Use GPT-5.6 Sol High and start `/goal` from `GOAL_PROMPT.md` only after the
+Director records the claim. Renew the claim heartbeat during long work. You own:
 
 - hypothesis generation and ranking
 - implementation and experiment order

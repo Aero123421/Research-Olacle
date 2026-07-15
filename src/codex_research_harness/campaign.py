@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import re
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .config import load_compute_config
+from .locking import lab_lock
 from .models import LabPaths
 from .schema import validate_campaign_contract, validate_campaign_handoff, validate_or_raise
 from .utils import atomic_write_json, atomic_write_text, deep_merge, iso_now, read_json, safe_relpath
@@ -46,7 +50,7 @@ def default_contract(campaign_id: str, title: str, goal: str) -> dict[str, Any]:
         },
         "success_conditions": ["Planner must define a measurable, evidence-backed success condition."],
         "withdrawal_conditions": ["Planner must define a measurable stop condition."],
-        "budget": {"wall_hours": 12.0, "gpu_hours": 6.0, "paid_compute_jpy": 0.0},
+        "budget": {"wall_hours": 12.0, "gpu_hours": 8.0, "paid_compute_jpy": 0.0},
         "checkpoint_policy": {
             "budget_fractions": [0.25, 0.5, 0.8],
             "events": [
@@ -105,27 +109,37 @@ def create_campaign(
     contract: dict[str, Any] | None = None,
     campaign_id: str | None = None,
 ) -> Path:
-    campaign_id = campaign_id or next_campaign_id(paths)
-    if not CAMPAIGN_PATTERN.match(campaign_id):
-        raise ValueError("campaign_id must look like C-001")
-    directory = paths.campaigns / campaign_id
-    if directory.exists():
-        raise FileExistsError(f"Campaign {campaign_id} already exists")
-    directory.mkdir(parents=True)
-    value = dict(contract) if contract else default_contract(campaign_id, title, goal)
-    value["campaign_id"] = campaign_id
-    value.setdefault("title", title)
-    value.setdefault("goal", goal)
-    state = _initial_state(campaign_id)
-    atomic_write_json(directory / "CONTRACT.json", value)
-    atomic_write_json(directory / "STATE.json", state)
-    atomic_write_text(directory / "STATE.md", render_state_markdown(state, value))
-    atomic_write_text(directory / "HYPOTHESES.md", "# Hypotheses\n\nNo hypotheses registered yet.\n")
-    atomic_write_text(directory / "FINDINGS.md", "# Confirmed findings\n\nNo confirmed findings yet.\n")
-    atomic_write_text(directory / "REPORT.md", "# Campaign report\n\nPending.\n")
-    atomic_write_text(directory / "HANDOFF.md", "# Planner handoff\n\nPending.\n")
-    atomic_write_text(directory / "GOAL_PROMPT.md", render_goal_prompt(value))
-    return directory
+    with lab_lock(paths, "campaign-ids"):
+        campaign_id = campaign_id or next_campaign_id(paths)
+        if not CAMPAIGN_PATTERN.match(campaign_id):
+            raise ValueError("campaign_id must look like C-001")
+        directory = paths.campaigns / campaign_id
+        if directory.exists():
+            raise FileExistsError(f"Campaign {campaign_id} already exists")
+        directory.mkdir(parents=True)
+        value = dict(contract) if contract else default_contract(campaign_id, title, goal)
+        if contract is None:
+            defaults = load_compute_config(paths).get("campaign_defaults", {})
+            value["budget"] = {
+                "wall_hours": float(defaults.get("wall_hours", value["budget"]["wall_hours"])),
+                "gpu_hours": float(defaults.get("gpu_hours", value["budget"]["gpu_hours"])),
+                "paid_compute_jpy": float(
+                    defaults.get("paid_compute_jpy", value["budget"]["paid_compute_jpy"])
+                ),
+            }
+        value["campaign_id"] = campaign_id
+        value.setdefault("title", title)
+        value.setdefault("goal", goal)
+        state = _initial_state(campaign_id)
+        atomic_write_json(directory / "CONTRACT.json", value)
+        atomic_write_json(directory / "STATE.json", state)
+        atomic_write_text(directory / "STATE.md", render_state_markdown(state, value))
+        atomic_write_text(directory / "HYPOTHESES.md", "# Hypotheses\n\nNo hypotheses registered yet.\n")
+        atomic_write_text(directory / "FINDINGS.md", "# Confirmed findings\n\nNo confirmed findings yet.\n")
+        atomic_write_text(directory / "REPORT.md", "# Campaign report\n\nPending.\n")
+        atomic_write_text(directory / "HANDOFF.md", "# Planner handoff\n\nPending.\n")
+        atomic_write_text(directory / "GOAL_PROMPT.md", render_goal_prompt(value))
+        return directory
 
 
 def validate_contract_file(path: Path) -> list[str]:
@@ -137,117 +151,239 @@ def finalize_campaign_contract(paths: LabPaths, campaign_id: str) -> dict[str, A
     """Mark a completed Planner contract ready only after strict validation."""
 
     directory = paths.campaigns / campaign_id
-    contract_path = directory / "CONTRACT.json"
-    contract = read_json(contract_path, default={})
-    if not contract:
-        raise FileNotFoundError(f"Unknown campaign {campaign_id}")
-    candidate = dict(contract)
-    candidate["contract_status"] = "ready"
-    candidate["finalized_at"] = iso_now()
-    validate_or_raise(candidate, lambda value: validate_campaign_contract(value, require_ready=True))
-    atomic_write_json(contract_path, candidate)
-    state = read_json(directory / "STATE.json", default={})
-    state = deep_merge(
-        state,
-        {
-            "status": "ready",
-            "phase": "contract",
-            "current_action": "Build bounded Executor context and launch fresh Goal Mode session",
-            "last_checkpoint_at": iso_now(),
-        },
-    )
-    _persist_state(directory, state, candidate)
-    atomic_write_text(directory / "GOAL_PROMPT.md", render_goal_prompt(candidate))
-    return candidate
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        contract_path = directory / "CONTRACT.json"
+        contract = read_json(contract_path, default={})
+        if not contract:
+            raise FileNotFoundError(f"Unknown campaign {campaign_id}")
+        candidate = dict(contract)
+        candidate["contract_status"] = "ready"
+        candidate["finalized_at"] = iso_now()
+        validate_or_raise(candidate, lambda value: validate_campaign_contract(value, require_ready=True))
+        atomic_write_json(contract_path, candidate)
+        state = read_json(directory / "STATE.json", default={})
+        state = deep_merge(
+            state,
+            {
+                "status": "ready",
+                "phase": "contract",
+                "current_action": "Build bounded Executor context and launch fresh Goal Mode session",
+                "last_checkpoint_at": iso_now(),
+            },
+        )
+        _persist_state(directory, state, candidate)
+        atomic_write_text(directory / "GOAL_PROMPT.md", render_goal_prompt(candidate))
+        return candidate
 
 
 def activate_campaign(paths: LabPaths, campaign_id: str) -> dict[str, Any]:
     directory = paths.campaigns / campaign_id
-    contract = read_json(directory / "CONTRACT.json")
-    validate_or_raise(contract, lambda value: validate_campaign_contract(value, require_ready=True))
-    state = read_json(directory / "STATE.json", default={})
-    if state.get("status") == "completed":
-        raise ValueError(f"Campaign {campaign_id} is already completed")
-    state = deep_merge(
-        state,
-        {
-            "status": "ready",
-            "phase": "context_pack",
-            "current_action": "Prepare bounded executor context",
-            "last_checkpoint_at": iso_now(),
-        },
-    )
-    _persist_state(directory, state, contract)
-    atomic_write_text(directory / "GOAL_PROMPT.md", render_goal_prompt(contract))
-    return state
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        contract = read_json(directory / "CONTRACT.json")
+        validate_or_raise(contract, lambda value: validate_campaign_contract(value, require_ready=True))
+        state = read_json(directory / "STATE.json", default={})
+        if state.get("status") == "completed":
+            raise ValueError(f"Campaign {campaign_id} is already completed")
+        if state.get("status") in {"executing", "running", "waiting", "validating", "reporting"}:
+            raise ValueError(f"Campaign {campaign_id} already has an active Executor claim")
+        state = deep_merge(
+            state,
+            {
+                "status": "ready",
+                "phase": "context_pack",
+                "current_action": "Prepare bounded executor context",
+                "last_checkpoint_at": iso_now(),
+            },
+        )
+        _persist_state(directory, state, contract)
+        atomic_write_text(directory / "GOAL_PROMPT.md", render_goal_prompt(contract))
+        return state
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def claim_executor(
+    paths: LabPaths,
+    campaign_id: str,
+    *,
+    session_id: str | None = None,
+    owner: str = "codex-app-director",
+    worktree: str | None = None,
+    lease_minutes: int = 180,
+    allow_stale_takeover: bool = False,
+) -> dict[str, Any]:
+    """Atomically claim one ready Campaign before launching Goal Mode."""
+
+    if lease_minutes <= 0:
+        raise ValueError("lease_minutes must be positive")
+    directory = paths.campaigns / campaign_id
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        contract = read_json(directory / "CONTRACT.json", default={})
+        validate_or_raise(contract, lambda value: validate_campaign_contract(value, require_ready=True))
+        state = read_json(directory / "STATE.json", default={})
+        if not state:
+            raise FileNotFoundError(f"Missing state for {campaign_id}")
+
+        now = datetime.now(UTC)
+        current = state.get("executor") if isinstance(state.get("executor"), dict) else {}
+        if state.get("status") == "executing":
+            expiry = _parse_iso(current.get("lease_expires_at"))
+            stale = bool(expiry and expiry <= now)
+            if not stale or not allow_stale_takeover:
+                raise ValueError(
+                    f"Campaign {campaign_id} is already claimed by "
+                    f"{current.get('session_id') or current.get('claim_id') or 'another executor'}"
+                )
+        elif state.get("status") != "ready":
+            raise ValueError(f"Campaign {campaign_id} must be ready before it can be claimed")
+
+        # Validate the exact bounded pack before persisting ownership. Imported
+        # lazily to keep the campaign model independent from pack construction.
+        from .context import sha256_file, validate_context_pack
+
+        contract_path = directory / "CONTRACT.json"
+        issues = validate_context_pack(
+            paths,
+            directory / "CONTEXT_PACK.md",
+            expected_role="research-executor",
+            expected_metadata={
+                "campaign_id": campaign_id,
+                "contract_sha256": sha256_file(contract_path),
+            },
+        )
+        if issues:
+            raise ValueError("Executor context pack is invalid: " + "; ".join(issues))
+
+        claim_id = uuid.uuid4().hex
+        actual_session_id = session_id or f"pending-{claim_id[:12]}"
+        heartbeat = now.replace(microsecond=0).isoformat()
+        lease_expires = (now + timedelta(minutes=lease_minutes)).replace(microsecond=0).isoformat()
+        state = deep_merge(
+            state,
+            {
+                "status": "executing",
+                "phase": "goal_mode",
+                "current_action": "Run one claimed GPT-5.6 Sol High Goal Mode executor",
+                "executor": {
+                    "claim_id": claim_id,
+                    "session_id": actual_session_id,
+                    "owner": owner,
+                    "worktree": worktree,
+                    "started_at": heartbeat,
+                    "heartbeat_at": heartbeat,
+                    "lease_expires_at": lease_expires,
+                },
+                "last_checkpoint_at": heartbeat,
+            },
+        )
+        _persist_state(directory, state, contract)
+        return state
+
+
+def heartbeat_executor(
+    paths: LabPaths,
+    campaign_id: str,
+    *,
+    claim_id: str,
+    session_id: str | None = None,
+    lease_minutes: int = 180,
+) -> dict[str, Any]:
+    if lease_minutes <= 0:
+        raise ValueError("lease_minutes must be positive")
+    directory = paths.campaigns / campaign_id
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        state = read_json(directory / "STATE.json", default={})
+        contract = read_json(directory / "CONTRACT.json", default={})
+        current = state.get("executor") if isinstance(state.get("executor"), dict) else {}
+        if state.get("status") != "executing" or current.get("claim_id") != claim_id:
+            raise ValueError(f"Executor claim for {campaign_id} is not current")
+        now = datetime.now(UTC)
+        heartbeat = now.replace(microsecond=0).isoformat()
+        current["heartbeat_at"] = heartbeat
+        current["lease_expires_at"] = (
+            (now + timedelta(minutes=lease_minutes)).replace(microsecond=0).isoformat()
+        )
+        if session_id:
+            current["session_id"] = session_id
+        state["executor"] = current
+        state["last_checkpoint_at"] = heartbeat
+        _persist_state(directory, state, contract)
+        return state
 
 
 def update_campaign_state(paths: LabPaths, campaign_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     directory = paths.campaigns / campaign_id
-    state_path = directory / "STATE.json"
-    state = read_json(state_path, default={})
-    contract = read_json(directory / "CONTRACT.json", default={})
-    if not state:
-        raise FileNotFoundError(f"Missing state for {campaign_id}")
-    for key in ("campaign_id", "schema_version"):
-        if key in patch and patch[key] != state.get(key):
-            raise ValueError(f"Cannot change {key}")
-    updated = deep_merge(state, patch)
-    _validate_resource_state(updated)
-    _apply_budget_status(updated, contract)
-    updated["last_checkpoint_at"] = iso_now()
-    _persist_state(directory, updated, contract)
-    return updated
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        state_path = directory / "STATE.json"
+        state = read_json(state_path, default={})
+        contract = read_json(directory / "CONTRACT.json", default={})
+        if not state:
+            raise FileNotFoundError(f"Missing state for {campaign_id}")
+        for key in ("campaign_id", "schema_version"):
+            if key in patch and patch[key] != state.get(key):
+                raise ValueError(f"Cannot change {key}")
+        updated = deep_merge(state, patch)
+        _validate_resource_state(updated)
+        _apply_budget_status(updated, contract)
+        updated["last_checkpoint_at"] = iso_now()
+        _persist_state(directory, updated, contract)
+        return updated
 
 
 def complete_campaign(paths: LabPaths, campaign_id: str, handoff: dict[str, Any]) -> dict[str, Any]:
     directory = paths.campaigns / campaign_id
-    if not directory.exists():
-        raise FileNotFoundError(f"Unknown campaign {campaign_id}")
-    handoff = dict(handoff)
-    handoff["campaign_id"] = campaign_id
-    validate_or_raise(handoff, validate_campaign_handoff)
-    for index, evidence in enumerate(handoff.get("evidence", [])):
-        artifact = evidence.get("artifact") if isinstance(evidence, dict) else None
-        if not isinstance(artifact, str):
-            continue
-        artifact_path = paths.root / artifact
-        safe_relpath(artifact_path, paths.root)
-        if not artifact_path.exists():
-            raise FileNotFoundError(
-                f"Handoff evidence artifact does not exist: evidence[{index}] {artifact!r}"
-            )
-    existing = read_json(directory / "HANDOFF.json", default=None)
-    if existing is not None and existing != handoff:
-        raise ValueError(f"Campaign {campaign_id} already has a different completed handoff")
-    atomic_write_json(directory / "HANDOFF.json", handoff)
-    atomic_write_text(directory / "HANDOFF.md", render_handoff_markdown(handoff))
-    state = read_json(directory / "STATE.json", default={})
-    actual = handoff["resources_actual"]
-    state = deep_merge(
-        state,
-        {
-            "status": "completed",
-            "phase": "handoff",
-            "current_action": "Research Planner must synthesize the handoff",
-            "next_actions": [
-                "Resume or create Research Planner session",
-                "Update strategy memory",
-                "Select next campaign",
-            ],
-            "outcome": handoff["outcome"],
-            "resources": {
-                "wall_hours_used": actual["wall_hours"],
-                "gpu_hours_used": actual["gpu_hours"],
-                "cost_jpy": actual["cost_jpy"],
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        if not directory.exists():
+            raise FileNotFoundError(f"Unknown campaign {campaign_id}")
+        handoff = dict(handoff)
+        handoff["campaign_id"] = campaign_id
+        validate_or_raise(handoff, validate_campaign_handoff)
+        for index, evidence in enumerate(handoff.get("evidence", [])):
+            artifact = evidence.get("artifact") if isinstance(evidence, dict) else None
+            if not isinstance(artifact, str):
+                continue
+            artifact_path = paths.root / artifact
+            safe_relpath(artifact_path, paths.root)
+            if not artifact_path.exists():
+                raise FileNotFoundError(
+                    f"Handoff evidence artifact does not exist: evidence[{index}] {artifact!r}"
+                )
+        existing = read_json(directory / "HANDOFF.json", default=None)
+        if existing is not None and existing != handoff:
+            raise ValueError(f"Campaign {campaign_id} already has a different completed handoff")
+        atomic_write_json(directory / "HANDOFF.json", handoff)
+        atomic_write_text(directory / "HANDOFF.md", render_handoff_markdown(handoff))
+        state = read_json(directory / "STATE.json", default={})
+        actual = handoff["resources_actual"]
+        state = deep_merge(
+            state,
+            {
+                "status": "completed",
+                "phase": "handoff",
+                "current_action": "Research Planner must synthesize the handoff",
+                "next_actions": [
+                    "Resume or create Research Planner session",
+                    "Update strategy memory",
+                    "Select next campaign",
+                ],
+                "outcome": handoff["outcome"],
+                "resources": {
+                    "wall_hours_used": actual["wall_hours"],
+                    "gpu_hours_used": actual["gpu_hours"],
+                    "cost_jpy": actual["cost_jpy"],
+                },
+                "last_checkpoint_at": iso_now(),
             },
-            "last_checkpoint_at": iso_now(),
-        },
-    )
-    contract = read_json(directory / "CONTRACT.json", default={})
-    _apply_budget_status(state, contract)
-    _persist_state(directory, state, contract)
-    return state
+        )
+        contract = read_json(directory / "CONTRACT.json", default={})
+        _apply_budget_status(state, contract)
+        _persist_state(directory, state, contract)
+        return state
 
 
 def _validate_resource_state(state: dict[str, Any]) -> None:

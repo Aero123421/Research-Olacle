@@ -206,7 +206,15 @@ class SecretHygieneProbe(Probe):
 
     def run(self):
         findings: list[dict[str, str]] = []
-        for path in self.paths.root.rglob("*"):
+        listed = self.command(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            timeout=30,
+        )
+        if listed.ok:
+            candidates = [self.paths.root / item for item in listed.stdout.split("\0") if item]
+        else:
+            candidates = list(self.paths.root.rglob("*"))
+        for path in candidates:
             if not path.is_file() or any(part in self.SKIP_DIRS for part in path.parts):
                 continue
             try:

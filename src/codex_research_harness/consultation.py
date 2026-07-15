@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .locking import lab_lock
 from .models import LabPaths
 from .utils import atomic_write_json, atomic_write_text, iso_now, read_json, run_command, safe_relpath
 
@@ -254,31 +255,32 @@ def prepare_consultation(
     if follow_up_route and follow_up_route.get("project_url") != state.get("project_url"):
         raise ValueError("Follow-up conversation belongs to a different ChatGPT Project")
 
-    question_id = _next_question_id(paths)
-    directory = paths.consultations / question_id
-    directory.mkdir(parents=True)
-    metadata = {
-        "schema_version": 1,
-        "question_id": question_id,
-        "purpose": purpose.strip(),
-        "requester_role": requester_role.strip(),
-        "question": question.strip(),
-        "context_files": normalized_context,
-        "follow_up_to": follow_up_to,
-        "status": "prepared",
-        "browser_mode": state.get("browser_mode"),
-        "required_model_label": state.get("selected_model_label"),
-        "project_route_saved_locally": True,
-        "follow_up_route_saved_locally": bool(follow_up_route),
-        "created_at": iso_now(),
-    }
-    atomic_write_json(directory / "META.json", metadata)
-    context_lines = "\n".join(f"- `{item}`" for item in metadata["context_files"]) or "- None"
-    mode = "FOLLOW-UP" if follow_up_to else "NEW CHAT"
-    lineage = f"Parent consultation: `{follow_up_to}`\n\n" if follow_up_to else ""
-    atomic_write_text(
-        directory / "REQUEST.md",
-        f"""# ChatGPT consultation {question_id}
+    with lab_lock(paths, "consultation-ids"):
+        question_id = _next_question_id(paths)
+        directory = paths.consultations / question_id
+        directory.mkdir(parents=True)
+        metadata = {
+            "schema_version": 1,
+            "question_id": question_id,
+            "purpose": purpose.strip(),
+            "requester_role": requester_role.strip(),
+            "question": question.strip(),
+            "context_files": normalized_context,
+            "follow_up_to": follow_up_to,
+            "status": "prepared",
+            "browser_mode": state.get("browser_mode"),
+            "required_model_label": state.get("selected_model_label"),
+            "project_route_saved_locally": True,
+            "follow_up_route_saved_locally": bool(follow_up_route),
+            "created_at": iso_now(),
+        }
+        atomic_write_json(directory / "META.json", metadata)
+        context_lines = "\n".join(f"- `{item}`" for item in metadata["context_files"]) or "- None"
+        mode = "FOLLOW-UP" if follow_up_to else "NEW CHAT"
+        lineage = f"Parent consultation: `{follow_up_to}`\n\n" if follow_up_to else ""
+        atomic_write_text(
+            directory / "REQUEST.md",
+            f"""# ChatGPT consultation {question_id}
 
 Mode: **{mode}**
 
@@ -312,9 +314,9 @@ Return:
 5. Conditions that should reverse the recommendation
 6. Confidence and important uncertainty
 """,
-    )
-    atomic_write_text(directory / "RESPONSE.md", "# ChatGPT response\n\nPending browser execution.\n")
-    return directory
+        )
+        atomic_write_text(directory / "RESPONSE.md", "# ChatGPT response\n\nPending browser execution.\n")
+        return directory
 
 
 def record_consultation_response(
