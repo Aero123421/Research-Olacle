@@ -19,3 +19,14 @@ The latest release and `main` receive security fixes.
 - paid compute requires hard limits, metering, and auto-shutdown
 - raw restricted research/Kaggle data stays local by default
 - one accountable writer per Campaign branch
+
+
+## Automated checks
+
+Pull requests run two complementary checks:
+
+- Gitleaks scans the complete Git history using the repository configuration.
+- `researchctl doctor --profile quick` provides a fast local hygiene check.
+
+The local probe is intentionally not a replacement for history scanning. GitHub
+Actions are pinned to immutable commit SHAs and updated through Dependabot.

@@ -17,9 +17,11 @@ Create a reproducible research lab; do not create a one-off setup in chat.
    compute, browser, ChatGPT Project local state, and secret hygiene.
 5. Explain results in Japanese using ordinary language. Ask only values that
    cannot be discovered, one choice at a time, with a recommended default.
-6. Write local setup answers and run `researchctl init --answers <file>`.
-7. If this is still a template clone, use `researchctl repo adopt` only after a
-   clean commit and explicit repository name/visibility are known.
+6. Write ignored local setup answers and run `researchctl init --answers <file>`.
+   Quick/full Doctor reports remain local before adoption and must not dirty the clone.
+7. If this is still a template clone, use `researchctl repo adopt` while the
+   tracked tree is clean and the repository name/visibility are known. Adoption
+   materializes tracked setup files only after the new repository exists.
 8. Run `researchctl github setup`; then invoke `github-project-setup` for views.
 9. Invoke `chatgpt-research-partner` to select browser, create/verify one ChatGPT
    Project, and verify an exact Pro model label.
@@ -50,7 +52,7 @@ or screenshots committed to Git.
 
 Bootstrap is complete only when:
 
-- `research/setup/READINESS.md` exists
+- after adoption, `research/setup/READINESS.md` exists (before adoption the same report remains under ignored local setup state)
 - GitHub Project state is recorded locally
 - selected browser mode is recorded
 - ChatGPT Project URL and exact model label are verified locally

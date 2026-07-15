@@ -43,7 +43,11 @@ The script:
 - creates `.venv`
 - installs this repository in editable mode without fetching runtime packages
 - runs the quick Doctor
-- optionally initializes local answers
+- optionally initializes ignored local answers
+- keeps the template clone commit-clean so repository adoption can run next
+
+Before adoption, Doctor outputs are stored under `.research-lab/local/setup/`.
+Tracked setup reports are materialized only after adoption succeeds.
 
 The base harness has no runtime Python dependencies. Data-science extras are
 installed only when the Planner needs them:
@@ -108,15 +112,17 @@ researchctl init --answers .research-lab\local\init-answers.json
 
 ## 4. Convert the template clone into the research repository
 
-When the clone still points at the OSS template, commit the pristine template
-state, then use:
+When the clone still points at the OSS template, keep the tracked tree pristine
+and use:
 
 ```powershell
 researchctl repo adopt OWNER/NEW-RESEARCH-REPO --visibility private
 ```
 
 This renames the old `origin` to `template-upstream`, creates the new repository,
-adds a new `origin`, and pushes. The command refuses a dirty tree.
+adds a new `origin`, and pushes. The command refuses a dirty tree, rolls the
+remote name back if creation fails, and only after success materializes the
+tracked setup profile/policy files for the Setup PR.
 
 ## 5. Create the GitHub Project control plane
 
@@ -237,10 +243,14 @@ After validating the Campaign Contract:
 researchctl campaign validate C-001
 researchctl campaign activate C-001
 researchctl context executor C-001
+researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --worktree <WORKTREE>
 ```
 
-Open a fresh GPT-5.6 Sol High session, read
-`research/campaigns/C-001/GOAL_PROMPT.md`, and start `/goal`.
+The claim is an atomic `ready → executing` transition and binds the Campaign to
+one session, owner, lease, and worktree. Only after the claim succeeds, open the
+fresh GPT-5.6 Sol High session, read
+`research/campaigns/C-001/GOAL_PROMPT.md`, and start `/goal`. A second live claim
+is rejected.
 
 One Campaign gets one Executor context. The Executor may create hypotheses,
 implement, run experiments, analyze evidence, and consult advisors. It may not

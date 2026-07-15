@@ -7,6 +7,7 @@ from pathlib import Path
 from codex_research_harness.bootstrap import initialize_repository
 from codex_research_harness.campaign import (
     activate_campaign,
+    claim_executor,
     complete_campaign,
     create_campaign,
     finalize_campaign_contract,
@@ -120,6 +121,14 @@ class EndToEndResearchLoopTests(unittest.TestCase):
             self.assertIn("research/campaigns/C-001/CONTRACT.json", executor_pack.included)
             self.assertNotIn("research/USER_INTENT.md", executor_pack.included)
             self.assertTrue((campaign_dir / "GOAL_PROMPT.md").exists())
+            claimed = claim_executor(
+                paths,
+                "C-001",
+                session_id="goal-e2e-001",
+                owner="test-director",
+                worktree="worktrees/C-001",
+            )
+            self.assertEqual(claimed["status"], "executing")
 
             job = register_job(
                 paths,

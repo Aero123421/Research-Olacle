@@ -56,6 +56,7 @@ class LabPaths:
     def ensure_runtime(self) -> None:
         for path in (
             self.local,
+            self.local / "locks",
             self.runtime,
             self.runtime / "context",
             self.runtime / "logs",

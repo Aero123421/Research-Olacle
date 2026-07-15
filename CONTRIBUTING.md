@@ -20,7 +20,7 @@ Thank you for improving Codex Research Harness.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\researchctl.exe self-test
 .\.venv\Scripts\researchctl.exe doctor --profile quick
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
 .\.venv\Scripts\ruff.exe check .
 .\.venv\Scripts\ruff.exe format --check .
 .\scripts\verify.ps1

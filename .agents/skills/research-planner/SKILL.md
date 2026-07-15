@@ -135,10 +135,12 @@ Activate and build the bounded Executor pack:
 ```powershell
 researchctl campaign activate <ID>
 researchctl context executor <ID>
+researchctl campaign claim-executor <ID> --session-id <GOAL_SESSION_ID> --worktree <WORKTREE>
 ```
 
-Open a **fresh** GPT-5.6 Sol High session for the campaign and use the generated
-`GOAL_PROMPT.md`. Do not reuse a previous Executor session.
+The claim must succeed before launch. Open a **fresh** GPT-5.6 Sol High session
+for the campaign and use the generated `GOAL_PROMPT.md`. Do not reuse a previous
+Executor session or launch a second session for an already claimed Campaign.
 
 ## Replanning after a Handoff
 

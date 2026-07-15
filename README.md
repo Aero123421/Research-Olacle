@@ -67,6 +67,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\bootstrap.ps1 -Initialize
 ```
 
+The initial bootstrap writes only ignored local discovery/interview state, so the
+template clone remains clean. Before materializing setup files, adopt it as the
+private research repository:
+
+```powershell
+researchctl repo adopt OWNER/NEW-RESEARCH-REPO --visibility private
+```
+
 Open the folder in Codex in the ChatGPT desktop app, then say:
 
 ```text
@@ -90,6 +98,8 @@ See [BOOTSTRAP.md](BOOTSTRAP.md) for the complete idempotent setup contract.
 
 ```powershell
 researchctl init --answers .research-lab\local\init-answers.json
+researchctl doctor --profile quick
+researchctl repo adopt OWNER/NEW-RESEARCH-REPO --visibility private
 researchctl doctor --profile full
 researchctl github setup
 researchctl plan create --intent-file mission.txt --target "https://..."
@@ -98,6 +108,7 @@ researchctl campaign create --title "..." --goal "..."
 researchctl campaign validate C-001
 researchctl campaign activate C-001
 researchctl context executor C-001
+researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --worktree <WORKTREE>
 researchctl loop checkpoint
 researchctl loop instruction
 researchctl job register --campaign C-001 --name "quick validation" --resource GPU0 --planned-hours 1
@@ -120,8 +131,10 @@ researchctl repo adopt OWNER/NEW-RESEARCH-REPO --visibility private
 ```
 
 The original remote becomes `template-upstream`; the new research repository
-becomes `origin`. Secrets, browser sessions, ChatGPT Project URLs, process IDs,
-and host-specific paths stay under ignored local state.
+becomes `origin`. Adoption then materializes the reviewable setup files in the
+new repository, ready for a Setup PR. Discovery, Doctor, browser sessions,
+ChatGPT Project URLs, process IDs, and host-specific paths remain under ignored
+local state until adoption succeeds.
 
 ## Research roles
 

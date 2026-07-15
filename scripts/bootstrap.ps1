@@ -68,7 +68,7 @@ Write-Host 'Running quick readiness checks...' -ForegroundColor Cyan
 & $ResearchCtl doctor --profile quick
 $DoctorExit = $LASTEXITCODE
 if ($DoctorExit -eq 2) {
-    Write-Warning 'Quick Doctor found blocking setup issues. Read research/setup/READINESS.md.'
+    Write-Warning 'Quick Doctor found blocking setup issues. Read the readiness path printed above.'
 }
 
 if (-not $SkipTests) {
