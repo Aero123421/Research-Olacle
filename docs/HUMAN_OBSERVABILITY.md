@@ -10,6 +10,7 @@ implementation detail.
 - wall/GPU/cost and ETA
 - next event
 - harness health/external boundary
+- compute control state: requested stop, confirmed stop, or unable to confirm
 
 Use progressive disclosure: 15-second summary, one-minute explanation, technical
 PR evidence. Explain at most two new terms in a normal update.
@@ -19,3 +20,7 @@ PR evidence. Explain at most two new terms in a normal update.
 Scores, time, GPU, dependencies, and evidence are generated deterministically as
 charts/diagrams. Generative images are optional explanatory illustrations only
 when the human explicitly asks for them.
+
+Never describe `cancellation_requested` as stopped. For a running external Job,
+show the external stop reference or explicitly state that termination has not yet
+been confirmed.

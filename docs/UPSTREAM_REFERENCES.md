@@ -40,4 +40,4 @@ This template intentionally owns its workflow and does not require OpenClaw or H
 - GitHub Projects: <https://docs.github.com/en/issues/planning-and-tracking-with-projects>
 - GitHub CLI Projects: <https://cli.github.com/manual/gh_project>
 
-The borrowed principles are deliberately small: durable file-backed state, independent role contexts, progressive Skill disclosure, evidence-only handoffs, and a task board owned outside any individual agent session.
+The borrowed principles are deliberately small: durable file-backed state, independent role contexts, progressive Skill disclosure, evidence-anchored handoffs, and a task board owned outside any individual agent session.

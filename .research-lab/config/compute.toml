@@ -18,20 +18,72 @@ require_cost_metering = true
 
 [backends.local_windows]
 enabled = true
+paid = false
 priority = 1
+cancellation_mode = "cooperative"
+cost_metering = false
+control_adapter = "none"
 
 [backends.kaggle_notebook]
 enabled = false
+paid = false
 priority = 2
 role = "submission_and_environment_reproduction"
+cancellation_mode = "unverified"
+cost_metering = false
+control_adapter = "none"
 
 [backends.ssh_gpu]
 enabled = false
+paid = true
 priority = 3
 role = "long_running_overflow"
+cancellation_mode = "unverified"
+cost_metering = false
+control_adapter = "none"
 
 [backends.colab]
 enabled = false
+paid = false
 priority = 4
 role = "opportunistic_only"
 critical_path_allowed = false
+cancellation_mode = "unverified"
+cost_metering = false
+control_adapter = "none"
+
+[resources.CPU]
+enabled = true
+kind = "cpu"
+backend = "local_windows"
+capacity = 1
+
+[resources.GPU0]
+enabled = true
+kind = "gpu"
+backend = "local_windows"
+capacity = 1
+
+[resources.GPU1]
+enabled = true
+kind = "gpu"
+backend = "local_windows"
+capacity = 1
+
+[resources.Kaggle]
+enabled = false
+kind = "remote_gpu"
+backend = "kaggle_notebook"
+capacity = 1
+
+[resources."SSH GPU"]
+enabled = false
+kind = "remote_gpu"
+backend = "ssh_gpu"
+capacity = 1
+
+[resources.Colab]
+enabled = false
+kind = "remote_gpu"
+backend = "colab"
+capacity = 1

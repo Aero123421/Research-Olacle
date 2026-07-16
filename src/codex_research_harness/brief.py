@@ -33,7 +33,7 @@ def generate_human_brief(paths: LabPaths) -> str:
 
 現在はResearch Plannerが曖昧な目標、データ、ルール、既存研究を整理し、最初の明確な研究Campaignを設計する段階です。
 
-**次:** Campaign Contractを作成し、GPT-5.6 Sol Highの`/goal`研究を開始します。
+**次:** Campaign Contractを作成し、設定済みResearch Executorプロファイルで`/goal`研究を開始します。
 """
         atomic_write_text(paths.research / "CURRENT_BRIEF.md", text)
         return text

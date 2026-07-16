@@ -7,13 +7,18 @@
   "compatibility": {
     "python": ">=3.11",
     "primary_os": "Windows 11",
-    "secondary_os": ["Linux", "macOS"]
+    "secondary_os": [
+      "Linux",
+      "macOS"
+    ]
   },
   "invariants": [
     "Research Planner and Research Executor use separate bounded contexts",
-    "One Campaign uses one fresh GPT-5.6 Sol High Goal Mode session",
-    "Campaign state is durable on disk and visible through GitHub",
+    "One Campaign uses one fresh configured Research Executor runtime profile and one fenced claim",
+    "ResearchPlan and Campaign lifecycle state is revisioned and changed through explicit transitions",
+    "Compute Jobs are typed, budgeted, and bound to the current Executor claim generation",
+    "Scientific claims live in an append-only evidence and falsification ledger",
     "ChatGPT Project consultation never silently falls back from exact Pro",
-    "Scientific decisions are autonomous inside explicit external boundaries"
+    "Scientific tactics are autonomous inside explicit human-owned external boundaries"
   ]
 }

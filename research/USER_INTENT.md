@@ -6,4 +6,4 @@
 
 Build an autonomous AI research lab that can turn a vague goal into a broad
 research plan, deep Goal Mode campaigns, evidence, and replanning while the human
-observes overall progress rather than making routine scientific decisions.
+observes overall progress and retains constitutional authority over the Mission, values, data/legal boundaries, hard budgets, public release, and irreversible external actions rather than approving routine experiments.

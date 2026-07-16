@@ -17,6 +17,7 @@ from .campaign import (
     finalize_campaign_contract,
     heartbeat_executor,
     list_campaign_ids,
+    transition_campaign_state,
     update_campaign_state,
     validate_contract_file,
 )
@@ -36,6 +37,7 @@ from .consultation import (
 from .context import build_executor_context, build_planner_context, check_context_sizes
 from .doctor import doctor_exit_code, doctor_output_paths, run_doctor
 from .eda import profile_dataset
+from .epistemics import current_claims, record_claim, update_claim
 from .experiments import read_experiments, register_experiment
 from .github import GitHubClient, write_project_plan
 from .jobs import (
@@ -49,7 +51,13 @@ from .jobs import (
 )
 from .loop import inspect_research_loop, render_loop_instruction, write_loop_state
 from .models import LabPaths
-from .plans import create_research_plan, link_campaign, list_plan_ids, update_research_plan
+from .plans import (
+    create_research_plan,
+    link_campaign,
+    list_plan_ids,
+    transition_research_plan,
+    update_research_plan,
+)
 from .repository import adopt_repository
 from .schema import ValidationError
 from .selftest import run_self_test
@@ -133,10 +141,25 @@ def build_parser() -> argparse.ArgumentParser:
     plan_create.add_argument("--id", dest="plan_id")
     plan_checkpoint = plan_sub.add_parser("checkpoint")
     plan_checkpoint.add_argument("plan_id")
+    plan_checkpoint.add_argument("--expected-revision", type=int)
     plan_checkpoint.add_argument("--patch", required=True)
+    plan_transition = plan_sub.add_parser(
+        "transition", help="Move a ResearchPlan through its explicit lifecycle"
+    )
+    plan_transition.add_argument("plan_id")
+    plan_transition.add_argument(
+        "--status",
+        required=True,
+        choices=["draft", "researching", "ready", "campaign_running", "replanning", "complete"],
+    )
+    plan_transition.add_argument("--campaign")
+    plan_transition.add_argument("--clear-campaign", action="store_true")
+    plan_transition.add_argument("--current-action")
+    plan_transition.add_argument("--expected-revision", type=int)
     plan_link = plan_sub.add_parser("link-campaign")
     plan_link.add_argument("plan_id")
     plan_link.add_argument("campaign_id")
+    plan_link.add_argument("--expected-revision", type=int)
     plan_sub.add_parser("list")
 
     context = sub.add_parser("context", help="Build bounded Planner/Executor context packs")
@@ -177,9 +200,26 @@ def build_parser() -> argparse.ArgumentParser:
     executor_heartbeat.add_argument("--lease-minutes", type=int, default=180)
     checkpoint = campaign_sub.add_parser("checkpoint")
     checkpoint.add_argument("campaign_id")
+    checkpoint.add_argument("--claim-id", required=True)
+    checkpoint.add_argument("--expected-revision", type=int)
     checkpoint.add_argument("--patch", required=True, help="JSON object or file")
+    transition = campaign_sub.add_parser(
+        "transition", help="Move a claimed Campaign between active lifecycle phases"
+    )
+    transition.add_argument("campaign_id")
+    transition.add_argument(
+        "--status",
+        required=True,
+        choices=["executing", "running", "waiting", "validating", "reporting"],
+    )
+    transition.add_argument("--phase", required=True)
+    transition.add_argument("--current-action")
+    transition.add_argument("--claim-id", required=True)
+    transition.add_argument("--expected-revision", type=int)
     complete = campaign_sub.add_parser("complete")
     complete.add_argument("campaign_id")
+    complete.add_argument("--claim-id", required=True)
+    complete.add_argument("--expected-revision", type=int)
     complete.add_argument("--handoff", required=True, help="Handoff JSON file")
     campaign_sub.add_parser("list")
 
@@ -250,19 +290,40 @@ def build_parser() -> argparse.ArgumentParser:
     job_register.add_argument("--command-summary")
     job_register.add_argument("--after")
     job_register.add_argument("--id", dest="job_id")
+    job_register.add_argument(
+        "--claim-id",
+        help="Required when the Campaign already has an active Executor claim",
+    )
     job_start = job_sub.add_parser("start")
     job_start.add_argument("job_id")
+    job_start.add_argument("--claim-id", required=True)
     job_heartbeat = job_sub.add_parser("heartbeat")
     job_heartbeat.add_argument("job_id")
+    job_heartbeat.add_argument("--claim-id", required=True)
     job_heartbeat.add_argument("--progress")
     job_heartbeat.add_argument("--wall-hours", type=float)
     job_heartbeat.add_argument("--gpu-hours", type=float)
     job_heartbeat.add_argument("--cost-jpy", type=float)
     job_finish = job_sub.add_parser("finish")
     job_finish.add_argument("job_id")
+    job_finish.add_argument("--claim-id")
+    job_finish.add_argument(
+        "--force-stale-claim",
+        action="store_true",
+        help="Audited recovery path; only failed/cancelled with a failure summary",
+    )
     job_finish.add_argument("--status", choices=["completed", "failed", "cancelled"], default="completed")
     job_finish.add_argument("--exit-code", type=int)
     job_finish.add_argument("--failure-summary")
+    job_finish.add_argument(
+        "--external-stop-confirmed",
+        action="store_true",
+        help="Attest that a running external process/provider Job is actually stopped",
+    )
+    job_finish.add_argument(
+        "--external-stop-reference",
+        help="Auditable PID, scheduler/provider Job ID, status URL, or operator record",
+    )
     job_finish.add_argument("--wall-hours", type=float)
     job_finish.add_argument("--gpu-hours", type=float)
     job_finish.add_argument("--cost-jpy", type=float)
@@ -273,6 +334,43 @@ def build_parser() -> argparse.ArgumentParser:
     job_sub.add_parser("gpu-queue")
     job_sync = job_sub.add_parser("sync-campaign")
     job_sync.add_argument("campaign_id")
+
+    claim_ledger = sub.add_parser(
+        "claim-ledger",
+        help="Maintain append-only epistemic claims, evidence, confidence, and falsifiers",
+    )
+    claim_sub = claim_ledger.add_subparsers(dest="claim_command", required=True)
+    claim_record = claim_sub.add_parser("record")
+    claim_record.add_argument("--statement", required=True)
+    claim_record.add_argument(
+        "--status", choices=["tentative", "corroborated", "refuted"], default="tentative"
+    )
+    claim_record.add_argument("--confidence", required=True, type=float)
+    claim_record.add_argument("--falsifier", required=True)
+    claim_record.add_argument("--evidence", action="append", default=[])
+    claim_record.add_argument("--assumption", action="append", default=[])
+    claim_record.add_argument("--expires-at")
+    claim_record.add_argument("--campaign")
+    claim_record.add_argument("--recorded-by", default="research-planner")
+    claim_record.add_argument("--supersedes")
+    claim_record.add_argument("--id", dest="claim_id")
+    claim_update = claim_sub.add_parser("update")
+    claim_update.add_argument("claim_id")
+    claim_update.add_argument("--statement")
+    claim_update.add_argument("--status", choices=["tentative", "corroborated", "refuted"])
+    claim_update.add_argument("--confidence", type=float)
+    claim_update.add_argument("--falsifier")
+    claim_update.add_argument("--evidence", action="append")
+    claim_update.add_argument("--assumption", action="append")
+    expiry_group = claim_update.add_mutually_exclusive_group()
+    expiry_group.add_argument("--expires-at")
+    expiry_group.add_argument("--clear-expiry", action="store_true")
+    claim_update.add_argument("--recorded-by", default="research-planner")
+    claim_list = claim_sub.add_parser("list")
+    claim_list.add_argument(
+        "--status", choices=["tentative", "corroborated", "refuted", "superseded", "expired"]
+    )
+    claim_list.add_argument("--exclude-expired", action="store_true")
 
     experiment = sub.add_parser("experiment", help="Register reproducible experiment evidence")
     exp_sub = experiment.add_subparsers(dest="experiment_command", required=True)
@@ -359,9 +457,41 @@ def command_plan(args: argparse.Namespace) -> int:
             )
         )
     elif args.plan_command == "checkpoint":
-        _print_json(update_research_plan(paths, args.plan_id, _json_arg(args.patch)))
+        _print_json(
+            update_research_plan(
+                paths,
+                args.plan_id,
+                _json_arg(args.patch),
+                expected_revision=args.expected_revision,
+            )
+        )
+    elif args.plan_command == "transition":
+        if args.campaign and args.clear_campaign:
+            raise ValueError("--campaign and --clear-campaign are mutually exclusive")
+        transition_kwargs: dict[str, Any] = {}
+        if args.clear_campaign:
+            transition_kwargs["selected_campaign"] = None
+        elif args.campaign:
+            transition_kwargs["selected_campaign"] = args.campaign
+        _print_json(
+            transition_research_plan(
+                paths,
+                args.plan_id,
+                status=args.status,
+                current_action=args.current_action,
+                expected_revision=args.expected_revision,
+                **transition_kwargs,
+            )
+        )
     elif args.plan_command == "link-campaign":
-        _print_json(link_campaign(paths, args.plan_id, args.campaign_id))
+        _print_json(
+            link_campaign(
+                paths,
+                args.plan_id,
+                args.campaign_id,
+                expected_revision=args.expected_revision,
+            )
+        )
     else:
         _print_json({"plans": list_plan_ids(paths)})
     return 0
@@ -422,10 +552,38 @@ def command_campaign(args: argparse.Namespace) -> int:
             )
         )
     elif args.campaign_command == "checkpoint":
-        _print_json(update_campaign_state(paths, args.campaign_id, _json_arg(args.patch)))
+        _print_json(
+            update_campaign_state(
+                paths,
+                args.campaign_id,
+                _json_arg(args.patch),
+                claim_id=args.claim_id,
+                expected_revision=args.expected_revision,
+            )
+        )
+    elif args.campaign_command == "transition":
+        _print_json(
+            transition_campaign_state(
+                paths,
+                args.campaign_id,
+                claim_id=args.claim_id,
+                status=args.status,
+                phase=args.phase,
+                current_action=args.current_action,
+                expected_revision=args.expected_revision,
+            )
+        )
     elif args.campaign_command == "complete":
         handoff = read_json(Path(args.handoff))
-        _print_json(complete_campaign(paths, args.campaign_id, handoff))
+        _print_json(
+            complete_campaign(
+                paths,
+                args.campaign_id,
+                handoff,
+                claim_id=args.claim_id,
+                expected_revision=args.expected_revision,
+            )
+        )
     else:
         _print_json({"campaigns": list_campaign_ids(paths)})
     return 0
@@ -526,15 +684,17 @@ def command_job(args: argparse.Namespace) -> int:
                 command_summary=args.command_summary,
                 queue_after=args.after,
                 job_id=args.job_id,
+                claim_id=args.claim_id,
             )
         )
     elif args.job_command == "start":
-        _print_json(start_job(paths, args.job_id))
+        _print_json(start_job(paths, args.job_id, claim_id=args.claim_id))
     elif args.job_command == "heartbeat":
         _print_json(
             heartbeat_job(
                 paths,
                 args.job_id,
+                claim_id=args.claim_id,
                 progress=args.progress,
                 actual_wall_hours=args.wall_hours,
                 actual_gpu_hours=args.gpu_hours,
@@ -546,12 +706,16 @@ def command_job(args: argparse.Namespace) -> int:
             finish_job(
                 paths,
                 args.job_id,
+                claim_id=args.claim_id,
                 status=args.status,
                 exit_code=args.exit_code,
                 failure_summary=args.failure_summary,
                 actual_wall_hours=args.wall_hours,
                 actual_gpu_hours=args.gpu_hours,
                 actual_cost_jpy=args.cost_jpy,
+                force_stale_claim=args.force_stale_claim,
+                external_stop_confirmed=args.external_stop_confirmed,
+                external_stop_reference=args.external_stop_reference,
             )
         )
     elif args.job_command == "list":
@@ -569,6 +733,58 @@ def command_job(args: argparse.Namespace) -> int:
         _print_json({"jobs": gpu_queue(paths)})
     else:
         _print_json(sync_campaign_resources(paths, args.campaign_id))
+    return 0
+
+
+def command_claim_ledger(args: argparse.Namespace) -> int:
+    paths = _paths(args)
+    if args.claim_command == "record":
+        _print_json(
+            record_claim(
+                paths,
+                statement=args.statement,
+                status=args.status,
+                confidence=args.confidence,
+                falsifier=args.falsifier,
+                evidence_refs=args.evidence,
+                assumptions=args.assumption,
+                expires_at=args.expires_at,
+                source_campaign=args.campaign,
+                recorded_by=args.recorded_by,
+                supersedes=args.supersedes,
+                claim_id=args.claim_id,
+            )
+        )
+    elif args.claim_command == "update":
+        kwargs: dict[str, Any] = {}
+        if args.clear_expiry:
+            kwargs["expires_at"] = None
+        elif args.expires_at is not None:
+            kwargs["expires_at"] = args.expires_at
+        _print_json(
+            update_claim(
+                paths,
+                args.claim_id,
+                status=args.status,
+                confidence=args.confidence,
+                statement=args.statement,
+                evidence_refs=args.evidence,
+                assumptions=args.assumption,
+                falsifier=args.falsifier,
+                recorded_by=args.recorded_by,
+                **kwargs,
+            )
+        )
+    else:
+        _print_json(
+            {
+                "claims": current_claims(
+                    paths,
+                    status=args.status,
+                    include_expired=not args.exclude_expired,
+                )
+            }
+        )
     return 0
 
 
@@ -608,6 +824,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "chatgpt": command_chatgpt,
         "loop": command_loop,
         "job": command_job,
+        "claim-ledger": command_claim_ledger,
         "experiment": command_experiment,
         "eda": command_eda,
         "brief": lambda value: print(generate_human_brief(_paths(value))) or 0,

@@ -51,6 +51,8 @@ def make_repo(tmp_path: Path) -> LabPaths:
         "research/strategy/PORTFOLIO.md",
         "research/strategy/OPEN_QUESTIONS.md",
         "research/strategy/EVIDENCE_INDEX.md",
+        "research/strategy/CLAIMS.jsonl",
+        "research/strategy/CLAIMS.md",
         "research/protocols/EVALUATION_CONTRACT.md",
         "research/setup/COMPUTE_POLICY.md",
         "research/setup/AGENT_ROSTER.md",
@@ -86,6 +88,14 @@ def ready_contract(campaign_id: str = "C-001") -> dict[str, Any]:
             "withdrawal_conditions": [
                 "Withdraw after three valid quick tests show no directional improvement."
             ],
+            "counter_hypotheses": [
+                "The apparent signal is validation noise rather than transferable information."
+            ],
+            "metric_gaming_risks": ["Repeated quick-CV selection may overfit the fixed validation split."],
+            "reversal_evidence": ["A preregistered confirmation run reverses the directional improvement."],
+            "adoption_exclusions": [
+                "Do not adopt a gain that depends on leakage, rule violations, or unstable folds."
+            ],
             "evidence_inputs": ["research/strategy/EVIDENCE_INDEX.md"],
         }
     )
@@ -100,12 +110,16 @@ def write_ready_contract(paths: LabPaths, campaign_id: str = "C-001") -> dict[st
 
 def valid_handoff(campaign_id: str = "C-001", artifact: str = "artifacts/evidence.txt") -> dict[str, Any]:
     return {
+        "schema_version": 2,
         "campaign_id": campaign_id,
         "outcome": "rejected_with_evidence",
         "summary": "The hypothesis did not survive confirmation, but the negative result changes the strategy.",
         "evidence": [
             {
                 "claim": "No stable improvement across confirmation runs",
+                "observation": "The preregistered confirmation runs did not reproduce the quick-CV gain.",
+                "inference": "The signal is not supported strongly enough for adoption.",
+                "confidence": "high",
                 "experiment_id": "EXP-001",
                 "artifact": artifact,
                 "commit": "0123456789abcdef",
@@ -116,6 +130,12 @@ def valid_handoff(campaign_id: str = "C-001", artifact: str = "artifacts/evidenc
         "unexpected_observations": [],
         "strategic_implications": ["Explore a different signal family"],
         "executor_recommendations": ["Revisit validation shift"],
+        "assumptions": ["The fixed validation contract remains representative enough for triage."],
+        "unresolved_questions": ["Whether the signal helps under a different but preregistered split."],
+        "unverified_leads": ["One subgroup moved positively but was not powered for a conclusion."],
+        "decision_reversal_evidence": [
+            "Independent confirmation on the locked evaluation reproduces a stable gain."
+        ],
         "resources_actual": {"wall_hours": 2, "gpu_hours": 1, "cost_jpy": 0},
         "limitations": ["Two seeds only"],
     }

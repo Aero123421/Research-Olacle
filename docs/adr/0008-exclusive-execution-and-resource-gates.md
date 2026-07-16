@@ -1,31 +1,49 @@
-# ADR-0008: Exclusive Campaign execution and enforced resource boundaries
+# ADR-0008: Exclusive Campaign execution and fail-closed resource boundaries
 
 Status: accepted
 
 ## Context
 
 Planner, Director monitoring, Goal Mode, and compute workers can operate in
-parallel on the Windows research host. File existence and dashboard warnings are
-not sufficient to prevent two Executors from owning one Campaign, two jobs from
-using the same GPU, or a job from crossing a hard time/cost boundary.
+parallel. File existence and dashboard warnings cannot prevent two Executors
+from owning one Campaign, a stale process from continuing to write, two Jobs from
+using one GPU, or an external workload from crossing a budget. A previous
+"hard-stop marker" could also be misread as proof that an external process had
+actually stopped.
 
 ## Decision
 
 - Shared IDs and mutable ledgers use repository-local cross-platform locks.
 - A ready Campaign must pass Context Pack integrity validation and complete an
-  atomic `ready → executing` claim before `/goal` starts.
-- The claim records its owner, session, worktree, heartbeat, and renewable lease.
-- Compute jobs are authorized on registration and again on start against the
-  Campaign, daily local GPU, paid-compute, backend, and physical-resource policy.
-- Runtime heartbeats persist a hard-stop marker when measured usage crosses a
-  boundary.
-- Context Packs are paired with source-hash manifests; incomplete or stale packs
-  are not runnable.
+  atomic claim before execution.
+- The claim records owner, session, worktree, heartbeat, lease, and monotonic
+  generation/fencing token.
+- Every active Campaign write and compute Job operation presents the exact current
+  claim; Jobs persist the claim ID and generation that own them.
+- Stale takeover is rejected while old queued/running Jobs remain unreconciled.
+- Resources are typed in configuration; GPU use is derived from resource kind,
+  not a display-name allowlist.
+- Projected and actual usage is monotonic and checked against Campaign, daily
+  local GPU, backend, paid-compute, and physical-capacity limits.
+- A runtime boundary creates a structured cancellation request. It never claims
+  the process stopped.
+- Cancelling a running Job requires external stop confirmation and an auditable
+  reference. A running failure requires an observed exit code; stale-claim
+  recovery requires external stop evidence for any running Job.
+- Paid compute requires a reviewed code-registered control adapter with enforced
+  cancellation and provider-side cost metering. Configuration declarations alone
+  are insufficient.
+- Every backend declares `paid = true` or `false`; paid backends require a
+  positive planned cost, preventing a zero-cost declaration from skipping the
+  paid-compute gate.
 
 ## Consequences
 
-Goal Mode launch and GPU use become explicit state transitions rather than
-conventions in prompts. A stale claim can be taken over deliberately after its
-lease expires, while a second live claim is rejected. The repository remains
-single-host and dependency-light; distributed locking and remote schedulers are
-outside the current scope.
+Goal Mode launch, state mutation, and GPU use become authorized transitions rather
+than prompt conventions. Stale ownership is fenced. Misreported decreasing usage
+is rejected. Operators must explicitly reconcile abandoned Jobs before takeover.
+
+The current release does not ship a paid-provider control adapter, so paid compute
+fails closed even when enabled in TOML. The repository remains single-host and
+dependency-light; distributed locking and provider-specific schedulers are future
+work.

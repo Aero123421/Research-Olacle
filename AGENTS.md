@@ -3,7 +3,7 @@
 This repository is a **research operating harness**, not a normal application.
 Its invariant is the autonomous loop:
 
-`vague human mission → Research Planner → bounded Campaign Contract → GPT-5.6 Sol High /goal Research Executor → evidence handoff → Research Planner`
+`vague human mission → Research Planner → bounded Campaign Contract → configured Research Executor runtime profile → evidence-anchored Handoff → Research Planner`
 
 ## First action in every new repository
 
@@ -20,6 +20,7 @@ Its invariant is the autonomous loop:
 - Mission: `research/MISSION.md`
 - Current strategy: `research/strategy/CURRENT.md`
 - Durable strategic memory: `research/strategy/MEMORY.md`
+- Epistemic claim/event ledger: `research/strategy/CLAIMS.jsonl` (projected to `CLAIMS.md`)
 - Campaign contract/state/evidence: `research/campaigns/<ID>/`
 - Experiment registry: `experiments/index.jsonl`
 - Human-facing current status: `research/CURRENT_BRIEF.md`
@@ -48,14 +49,19 @@ Contract with success, withdrawal, time, GPU, cost, and fixed-evaluation terms.
 
 ### Research Executor
 
-Uses the `research-executor` skill in a fresh GPT-5.6 Sol High `/goal` session,
-one session per Campaign. It owns hypotheses, implementation, experiment
+Uses the `research-executor` skill in one fresh session resolved from the Contract's configured runtime profile, one session per Campaign. It owns hypotheses, implementation, experiment
 ordering, analysis, and bounded consultation. It may not silently alter the
 mission, evaluation contract, resource budget, or campaign boundary.
 
 ## Research quality rules
 
 - Evidence, not activity, is progress.
+- Operational status is not scientific truth. Promote durable scientific claims
+  through `researchctl claim-ledger` with evidence, assumptions, confidence, a
+  falsifier, and expiry/supersession when applicable.
+- Never modify lifecycle, ownership, or identity fields through generic JSON
+  checkpoints. Use explicit Plan/Campaign transition commands, the current
+  `claim_id`, and `expected_revision` for concurrent writes.
 - A deep dive must name the decision it can change, the cheapest discriminating
   test, and a stop condition.
 - Do not start expensive work without a valid Campaign Contract.
@@ -72,7 +78,7 @@ mission, evaluation contract, resource budget, or campaign boundary.
 
 ## Human communication
 
-The human is the observer-owner, not a scientific approval gate. Read
+The human is not a routine scientific approval gate, but remains the owner of mission/value choices, data and legal boundaries, hard budgets, and external release decisions. Read
 `research/setup/HUMAN_PROFILE.md` before human-facing updates and use
 `lab-status`.
 
@@ -107,6 +113,10 @@ questions and the saved conversation URL for genuine follow-ups.
   evidence and agents.
 - Kaggle submissions follow the configured submission policy and competition
   rules. Setup tests are read-only and must never submit accidentally.
+- A cancellation request is not proof that a process stopped. Never mark a
+  running Job cancelled without an auditable external stop reference.
+- Paid compute is forbidden unless a reviewed code-registered backend control
+  adapter enforces cancellation and provider-side cost metering.
 
 ## Validation before committing
 

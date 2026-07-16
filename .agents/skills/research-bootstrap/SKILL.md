@@ -25,8 +25,10 @@ Create a reproducible research lab; do not create a one-off setup in chat.
 8. Run `researchctl github setup`; then invoke `github-project-setup` for views.
 9. Invoke `chatgpt-research-partner` to select browser, create/verify one ChatGPT
    Project, and verify an exact Pro model label.
-10. Verify advisor roles and compute policies. Missing optional advisors degrade;
-    they do not block core research.
+10. Verify advisor roles, runtime profiles, typed resources, and compute policies.
+    Paid compute must remain disabled unless a reviewed code-registered control
+    adapter proves enforced cancellation and provider-side cost metering. Missing
+    optional advisors degrade; they do not block core research.
 11. Run full Doctor, self-test, and tests. Write the setup report and Draft setup
     PR.
 12. Preserve the user's original wording in `research/USER_INTENT.md` and invoke
@@ -39,7 +41,8 @@ Create a reproducible research lab; do not create a one-off setup in chat.
 - Explain technical terms in one sentence at first use.
 - Human values: explanation depth, browser choice, compute/cost limits, external
   actions, mission, deadline.
-- Scientific decisions are autonomous and must not become approval questions.
+- Routine scientific decisions are delegated inside the human-owned Mission,
+  value, data/legal, hard-budget, public-release, and irreversible-action boundaries.
 
 ## External action boundary
 

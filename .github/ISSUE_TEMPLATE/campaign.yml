@@ -1,5 +1,5 @@
 name: Research Campaign
-about: One bounded GPT-5.6 Sol High Goal Mode campaign
+about: One bounded campaign executed through the configured Research Executor runtime profile
 labels: ["research:campaign", "agent:executor"]
 body:
   - type: input
@@ -7,6 +7,14 @@ body:
     attributes:
       label: Campaign ID
       placeholder: C-001
+    validations:
+      required: true
+  - type: input
+    id: runtime_profile
+    attributes:
+      label: Runtime profile
+      description: Stable profile name from .research-lab/config/agents.toml, not a provider model ID.
+      placeholder: research_executor
     validations:
       required: true
   - type: textarea
@@ -18,7 +26,20 @@ body:
   - type: textarea
     id: conditions
     attributes:
-      label: Success and withdrawal conditions
+      label: Success, withdrawal, and adoption-exclusion conditions
+    validations:
+      required: true
+  - type: textarea
+    id: falsification
+    attributes:
+      label: Counter-hypotheses and decision-reversal evidence
+      description: Keep credible competing explanations live and state what evidence would reverse the recommendation.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Metric-gaming and external-impact risks
     validations:
       required: true
   - type: input

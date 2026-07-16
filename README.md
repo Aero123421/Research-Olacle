@@ -15,18 +15,20 @@ Research Planner
 Campaign Contract
 (goal + evidence criteria + withdrawal + time/GPU/cost budget)
    ↓
-GPT-5.6 Sol High /goal Research Executor
+configured Research Executor runtime profile
 (hypotheses + implementation + experiments + analysis)
    ↓
-evidence-only Handoff
+evidence-anchored Handoff
+(observations + inferences + uncertainty + artifact references)
    ↓
 Research Planner replans
 ```
 
-The human is the observer-owner, not the scientific approval gate. GitHub
-Projects and Pull Requests make it easy to see what is running, what evidence has
-changed, how much wall/GPU time has been used, and what happens next—without
-having to follow implementation details.
+The human owns the mission, value choices, data/legal boundaries, hard budgets,
+and external release decisions, but is not a routine per-experiment approval gate.
+GitHub Projects and Pull Requests make it easy to see what is running, what
+evidence has changed, how much wall/GPU time has been used, and what happens
+next—without having to follow implementation details.
 
 [日本語 README](README.ja.md)
 
@@ -35,10 +37,19 @@ having to follow implementation details.
 - **Research Planner preset** for broad domain research, competition/rule
   analysis, reproducible EDA, baseline diagnostics, cross-domain search,
   strategy portfolios, and bounded advisor consultation.
-- **Research Executor preset** for one fresh GPT-5.6 Sol High `/goal` session per
-  Campaign, with explicit success, withdrawal, and compute budgets.
+- **Research Executor runtime profile** for one fresh bounded session per
+  Campaign, with the concrete runtime/model resolved from configuration.
 - **Durable loop orchestrator** that derives the next Planner/Executor transition
   from repository state, never from remembered chat.
+- **Revisioned state machines and fenced ownership**: lifecycle changes use
+  explicit commands, active writes require the current Executor claim, stale
+  revisions fail, and Jobs are bound to the owning claim generation.
+- **Typed compute resources and auditable cancellation**: unknown resource
+  names fail closed, GPU accounting follows resource kind, and a stop request is
+  never reported as a confirmed external stop without an audit reference.
+- **Epistemic claim ledger** that records statements, evidence, assumptions,
+  confidence, falsifiers, expiry, refutation, and supersession separately from
+  operational status.
 - **Context separation** inspired by durable workspace/memory patterns: Planner,
   Executor, and advisors receive separate bounded Context Packs instead of full
   transcripts and raw logs.
@@ -89,7 +100,7 @@ https://www.kaggle.com/competitions/...
 
 AGENTS.mdとBOOTSTRAP.mdに従い、読み取り専用の環境調査、必要な面談、
 GitHub Project、ChatGPT研究Project、Doctor、ResearchPlan、最初の
-GPT-5.6 Sol High /goal Campaign開始まで進めてください。
+設定済みResearch Executor Campaign開始まで進めてください。
 ```
 
 See [BOOTSTRAP.md](BOOTSTRAP.md) for the complete idempotent setup contract.
@@ -108,10 +119,14 @@ researchctl campaign create --title "..." --goal "..."
 researchctl campaign validate C-001
 researchctl campaign activate C-001
 researchctl context executor C-001
-researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --worktree <WORKTREE>
+$claim = researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --worktree <WORKTREE> | ConvertFrom-Json
+$claimId = $claim.executor.claim_id
 researchctl loop checkpoint
 researchctl loop instruction
-researchctl job register --campaign C-001 --name "quick validation" --resource GPU0 --planned-hours 1
+researchctl campaign checkpoint C-001 --claim-id $claimId --expected-revision <REVISION> --patch checkpoint.json
+researchctl job register --campaign C-001 --name "quick validation" --resource GPU0 --planned-hours 1 --claim-id $claimId
+researchctl job start <JOB_ID> --claim-id $claimId
+researchctl claim-ledger record --statement "..." --confidence 0.4 --falsifier "..."
 researchctl brief
 researchctl visualize
 ```
@@ -120,6 +135,14 @@ Run `researchctl --help` for the complete CLI. The Director can call
 `researchctl loop status` at any time to determine whether to run Planner, start
 or monitor one fresh Executor, resume Planner after Handoff, complete the Mission,
 or repair contradictory state.
+
+## Runtime boundary
+
+`researchctl loop` is a deterministic governance and recovery harness. It does
+**not** launch an AI process by itself. The Codex App Director, a scheduled task,
+or a provider-specific adapter executes the rendered instruction. Unattended
+remote execution is only as strong as that adapter; without a reviewed
+launch/status/cancel implementation, cancellation remains cooperative.
 
 ## Repository as template, not a central service
 
@@ -142,7 +165,7 @@ local state until adoption succeeds.
 |---|---|
 | Research Director | Human conversation, control-plane observation, starting/resuming loops |
 | Research Planner | Broad research landscape, EDA, evaluation risk, strategy and Campaign Contract |
-| Research Executor | One deep Goal Mode Campaign to success or withdrawal |
+| Research Executor | One fresh configured runtime-profile Campaign to success or withdrawal |
 | ChatGPT Pro partner | General senior research partner; role intentionally not narrowed |
 | Claude auditor | Independent methodology, CV, leakage, and falsification review |
 | Grok scout | X/community signals and divergent hypotheses |
@@ -155,7 +178,7 @@ configuration; actual model IDs and UI labels are local runtime facts.
 1. **Constitution** — small invariant instructions (`AGENTS.md`).
 2. **Role Skill** — Planner or Executor procedure, loaded only when needed.
 3. **Current Context Pack** — bounded evidence for the current job.
-4. **Durable Memory** — verified strategic findings and decisions on disk.
+4. **Durable Memory** — verified strategic findings, decisions, and the append-only claim ledger on disk.
 5. **Archive** — logs, artifacts, full consultation responses, models, and raw
    evidence; searched only when a decision requires it.
 
@@ -186,14 +209,28 @@ with available evidence and advisors.
 
 ## Scope and safety
 
-Scientific research decisions are autonomous. External boundaries remain
-explicit: credentials/MFA, terms acceptance, new paid providers, hard-budget
-increases, public release, and destructive external actions.
+Scientific tactics are autonomous inside the Contract. Human-owned boundaries
+remain explicit: mission/value choices, credentials/MFA, terms acceptance, data
+and legal policy, new paid providers, hard-budget increases, public release, and
+destructive or irreversible external actions.
+
+A budget or policy violation records a cancellation request; it is not evidence
+that the external process stopped. A running Job becomes `cancelled` only after
+an auditable PID, scheduler/provider Job ID, status record, or equivalent stop
+reference is supplied. Paid compute fails closed unless a reviewed code adapter
+can both enforce cancellation and obtain provider-side cost measurements. Every
+backend must explicitly declare whether it is paid; a paid backend also requires
+a positive per-Job cost estimate, so `planned_cost_jpy = 0` cannot bypass those
+controls.
 
 Kaggle rules and data-sharing constraints always apply. External advisors receive
 only the minimum necessary context; raw competition data stays local by default.
 
 ## Development
+
+The project is currently **alpha**: the protocol and local control plane are tested,
+but provider-specific enforced-cancellation adapters are not shipped yet.
+
 
 ```powershell
 .\scripts\bootstrap.ps1

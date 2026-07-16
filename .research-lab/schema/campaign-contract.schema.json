@@ -26,63 +26,285 @@
     "owner"
   ],
   "properties": {
-    "schema_version": {"const": 1},
-    "contract_status": {"enum": ["draft", "ready"]},
-    "campaign_id": {"type": "string", "pattern": "^C-[0-9]{3,}$"},
-    "title": {"type": "string", "minLength": 1},
-    "mission": {"type": "string", "minLength": 1},
-    "goal": {"type": "string", "minLength": 1},
-    "why_now": {"type": "string", "minLength": 1},
-    "decision_to_unlock": {"type": "string", "minLength": 1},
+    "schema_version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "contract_status": {
+      "enum": [
+        "draft",
+        "ready"
+      ]
+    },
+    "campaign_id": {
+      "type": "string",
+      "pattern": "^C-[0-9]{3,}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "why_now": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_to_unlock": {
+      "type": "string",
+      "minLength": 1
+    },
     "scope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["in", "out"],
+      "required": [
+        "in",
+        "out"
+      ],
       "properties": {
-        "in": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-        "out": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "out": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
-    "success_conditions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "withdrawal_conditions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "success_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "withdrawal_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "budget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["wall_hours", "gpu_hours", "paid_compute_jpy"],
+      "required": [
+        "wall_hours",
+        "gpu_hours",
+        "paid_compute_jpy"
+      ],
       "properties": {
-        "wall_hours": {"type": "number", "exclusiveMinimum": 0},
-        "gpu_hours": {"type": "number", "minimum": 0},
-        "paid_compute_jpy": {"type": "number", "minimum": 0}
+        "wall_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gpu_hours": {
+          "type": "number",
+          "minimum": 0
+        },
+        "paid_compute_jpy": {
+          "type": "number",
+          "minimum": 0
+        }
       }
     },
     "checkpoint_policy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["budget_fractions", "events"],
+      "required": [
+        "budget_fractions",
+        "events"
+      ],
       "properties": {
         "budget_fractions": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "exclusiveMaximum": 1
+          }
         },
-        "events": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
-    "evaluation_contract": {"type": "string", "minLength": 1},
-    "fixed_constraints": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "forbidden_detours": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "evidence_inputs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-    "required_outputs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "evaluation_contract": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixed_constraints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "forbidden_detours": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evidence_inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required_outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "owner": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["runtime", "model", "effort"],
+      "anyOf": [
+        {
+          "required": [
+            "runtime_profile"
+          ],
+          "properties": {
+            "runtime_profile": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "runtime",
+            "model",
+            "effort"
+          ],
+          "properties": {
+            "runtime": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "effort": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "counter_hypotheses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "metric_gaming_risks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "reversal_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "adoption_exclusions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "amendment_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requires_replanning_for",
+        "record_location"
+      ],
       "properties": {
-        "runtime": {"type": "string", "minLength": 1},
-        "model": {"type": "string", "minLength": 1},
-        "effort": {"type": "string", "minLength": 1}
+        "requires_replanning_for": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "record_location": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "schema_version"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 2
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "counter_hypotheses",
+          "metric_gaming_risks",
+          "reversal_evidence",
+          "adoption_exclusions",
+          "amendment_policy"
+        ]
+      }
+    }
+  ]
 }

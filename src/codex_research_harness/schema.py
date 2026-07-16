@@ -80,6 +80,10 @@ def _validate_ready_content(value: dict[str, Any], issues: list[ValidationIssue]
         "scope",
         "success_conditions",
         "withdrawal_conditions",
+        "counter_hypotheses",
+        "metric_gaming_risks",
+        "reversal_evidence",
+        "adoption_exclusions",
         "evidence_inputs",
     ):
         if _contains_draft_marker(value.get(key)):
@@ -96,6 +100,11 @@ def validate_campaign_contract(value: Any, *, require_ready: bool = True) -> lis
     if not _require_mapping(value, "$", issues):
         return issues
     assert isinstance(value, dict)
+
+    version = value.get("schema_version")
+    if isinstance(version, bool) or version not in {1, 2}:
+        issues.append(ValidationIssue("$.schema_version", "must be 1 or 2"))
+    is_v2 = version == 2
 
     for key in ("campaign_id", "title", "mission", "goal", "why_now", "decision_to_unlock"):
         _require_nonempty_string(value, key, issues)
@@ -125,6 +134,16 @@ def validate_campaign_contract(value: Any, *, require_ready: bool = True) -> lis
         "required_outputs",
     ):
         _require_string_list(value, key, issues)
+
+    epistemic_fields = (
+        "counter_hypotheses",
+        "metric_gaming_risks",
+        "reversal_evidence",
+        "adoption_exclusions",
+    )
+    for key in epistemic_fields:
+        if is_v2 or key in value:
+            _require_string_list(value, key, issues)
 
     budget = value.get("budget")
     if _require_mapping(budget, "$.budget", issues):
@@ -163,12 +182,37 @@ def validate_campaign_contract(value: Any, *, require_ready: bool = True) -> lis
             )
         _require_string_list(policy, "events", issues, path="$.checkpoint_policy")
 
+    amendment = value.get("amendment_policy")
+    if is_v2 or "amendment_policy" in value:
+        if _require_mapping(amendment, "$.amendment_policy", issues):
+            assert isinstance(amendment, dict)
+            _require_string_list(
+                amendment,
+                "requires_replanning_for",
+                issues,
+                path="$.amendment_policy",
+            )
+            _require_nonempty_string(
+                amendment,
+                "record_location",
+                issues,
+                path="$.amendment_policy",
+            )
+
     _require_nonempty_string(value, "evaluation_contract", issues)
     owner = value.get("owner")
     if _require_mapping(owner, "$.owner", issues):
         assert isinstance(owner, dict)
-        for key in ("runtime", "model", "effort"):
-            _require_nonempty_string(owner, key, issues, path="$.owner")
+        profile = owner.get("runtime_profile")
+        legacy_fields = ("runtime", "model", "effort")
+        has_legacy = all(isinstance(owner.get(key), str) and owner[key].strip() for key in legacy_fields)
+        if not (isinstance(profile, str) and profile.strip()) and not has_legacy:
+            issues.append(
+                ValidationIssue(
+                    "$.owner",
+                    "must define runtime_profile or the legacy runtime/model/effort fields",
+                )
+            )
 
     return issues
 
@@ -178,6 +222,11 @@ def validate_campaign_handoff(value: Any) -> list[ValidationIssue]:
     if not _require_mapping(value, "$", issues):
         return issues
     assert isinstance(value, dict)
+    version = value.get("schema_version", 1)
+    if isinstance(version, bool) or version not in {1, 2}:
+        issues.append(ValidationIssue("$.schema_version", "must be 1 or 2 when present"))
+    is_v2 = version == 2
+
     for key in ("campaign_id", "outcome", "summary"):
         _require_nonempty_string(value, key, issues)
     if isinstance(value.get("campaign_id"), str) and not CAMPAIGN_ID_RE.match(value["campaign_id"]):
@@ -208,6 +257,18 @@ def validate_campaign_handoff(value: Any) -> list[ValidationIssue]:
         if not isinstance(raw, list) or not all(isinstance(item, str) and item.strip() for item in raw):
             issues.append(ValidationIssue(f"$.{key}", "must be a list of non-empty strings"))
 
+    epistemic_residue = (
+        "assumptions",
+        "unresolved_questions",
+        "unverified_leads",
+        "decision_reversal_evidence",
+    )
+    for key in epistemic_residue:
+        if is_v2 or key in value:
+            raw = value.get(key)
+            if not isinstance(raw, list) or not all(isinstance(item, str) and item.strip() for item in raw):
+                issues.append(ValidationIssue(f"$.{key}", "must be a list of non-empty strings"))
+
     evidence = value.get("evidence")
     if not isinstance(evidence, list) or not evidence:
         issues.append(ValidationIssue("$.evidence", "must be a non-empty list"))
@@ -218,6 +279,33 @@ def validate_campaign_handoff(value: Any) -> list[ValidationIssue]:
                 continue
             for key in ("claim", "artifact", "commit"):
                 _require_nonempty_string(item, key, issues, path=f"$.evidence[{index}]")
+            if is_v2:
+                for key in ("observation", "inference"):
+                    _require_nonempty_string(item, key, issues, path=f"$.evidence[{index}]")
+            else:
+                if "observation" in item:
+                    _require_nonempty_string(
+                        item,
+                        "observation",
+                        issues,
+                        path=f"$.evidence[{index}]",
+                    )
+                if "inference" in item:
+                    _require_nonempty_string(
+                        item,
+                        "inference",
+                        issues,
+                        path=f"$.evidence[{index}]",
+                    )
+
+            if is_v2 or "confidence" in item:
+                if item.get("confidence") not in {"low", "medium", "high"}:
+                    issues.append(
+                        ValidationIssue(
+                            f"$.evidence[{index}].confidence",
+                            "must be low, medium, or high",
+                        )
+                    )
 
     resources = value.get("resources_actual")
     if _require_mapping(resources, "$.resources_actual", issues):

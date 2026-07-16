@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from .context import sha256_file, validate_context_pack
@@ -13,6 +14,7 @@ LoopAction = Literal[
     "run_planner",
     "start_executor",
     "monitor_executor",
+    "recover_executor",
     "resume_planner",
     "mission_complete",
     "repair_state",
@@ -40,6 +42,16 @@ class LoopDecision:
             "campaign_status": self.campaign_status,
             "generated_at": self.generated_at or iso_now(),
         }
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _decision(
@@ -162,7 +174,7 @@ def inspect_research_loop(paths: LabPaths) -> LoopDecision:
             )
         return _decision(
             "start_executor",
-            f"Atomically claim, then start one fresh GPT-5.6 Sol High Goal Mode session for {campaign_id}.",
+            f"Atomically claim, then start one fresh configured Research Executor session for {campaign_id}.",
             plan_id=plan_id,
             campaign_id=campaign_id,
             plan_status=plan_status,
@@ -170,6 +182,17 @@ def inspect_research_loop(paths: LabPaths) -> LoopDecision:
         )
 
     if campaign_status in {"executing", "running", "waiting", "validating", "reporting"}:
+        executor = campaign_state.get("executor") if isinstance(campaign_state.get("executor"), dict) else {}
+        expiry = _parse_time(executor.get("lease_expires_at"))
+        if executor.get("status") != "active" or expiry is None or expiry <= datetime.now(UTC):
+            return _decision(
+                "recover_executor",
+                f"Campaign {campaign_id} is active but its Executor lease is missing, invalid, or expired.",
+                plan_id=plan_id,
+                campaign_id=campaign_id,
+                plan_status=plan_status,
+                campaign_status=campaign_status,
+            )
         return _decision(
             "monitor_executor",
             f"Campaign {campaign_id} is active. Observe durable checkpoints without injecting unrelated context.",
@@ -244,7 +267,7 @@ parallel portfolio is explicitly budgeted.
 
 First run `researchctl campaign claim-executor {decision.campaign_id}`. Only the
 process that receives the persisted claim may open a **fresh** Codex session,
-select GPT-5.6 Sol High, load the `research-executor` Skill, read
+use the Campaign's configured runtime profile, load the `research-executor` Skill, read
 `research/campaigns/{decision.campaign_id}/GOAL_PROMPT.md`, and invoke `/goal`.
 Never reuse an Executor session from another Campaign. A second claim must fail.
 """
@@ -258,6 +281,23 @@ Never reuse an Executor session from another Campaign. A second claim must fail.
 Read the Campaign `STATE.json`, compute job ledger, GitHub Project item, and
 latest checkpoint. Report time/GPU/evidence changes to the human. Do not interrupt
 the active Goal unless a hard external boundary or invalid evaluation is present.
+"""
+        )
+    if action == "recover_executor":
+        return (
+            common
+            + f"""
+## Director action
+
+The persisted Executor lease is no longer authoritative. First inspect
+`researchctl job list --campaign {decision.campaign_id}`. For every queued or
+running Job bound to the expired claim, stop and confirm any external process or
+provider Job before reconciling the ledger with `researchctl job finish <JOB_ID>
+--status cancelled --failure-summary <REASON> --force-stale-claim`. Never treat a
+ledger update as proof that external compute stopped. Then rebuild the bounded pack
+with `researchctl context executor {decision.campaign_id}` and obtain a new fenced
+claim using `researchctl campaign claim-executor {decision.campaign_id}
+--take-over-stale`. Do not reuse the expired session or claim ID.
 """
         )
     if action == "mission_complete":

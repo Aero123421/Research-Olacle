@@ -165,8 +165,17 @@ def _write_human_profile(paths: LabPaths, values: dict[str, Any]) -> None:
         paths.research / "human" / "PROFILE.json",
         {
             "schema_version": 1,
-            "human_role": "observer_owner",
-            "research_decisions_required": False,
+            "human_role": "constitutional_owner",
+            "routine_research_decisions_required": False,
+            "constitutional_decisions_required": True,
+            "constitutional_authority": [
+                "mission_and_value_choices",
+                "data_and_legal_policy",
+                "hard_budget_ceilings",
+                "credentials_and_terms",
+                "public_release",
+                "destructive_or_irreversible_external_actions",
+            ],
             "language": values["language"],
             "knowledge": level,
             "communication": comm,
@@ -177,8 +186,9 @@ def _write_human_profile(paths: LabPaths, values: dict[str, Any]) -> None:
         paths.setup / "HUMAN_PROFILE.md",
         f"""# Human communication profile
 
-The human is the **observer-owner**, not the scientific approval gate.
-Research must not pause for routine scientific judgment.
+The human is the **constitutional owner**, not a routine scientific approval gate.
+Research must not pause for routine scientific judgment, but Mission, value, data/legal,
+hard-budget, public-release, and irreversible external boundaries remain human-owned.
 
 ## Explanation level
 
@@ -218,8 +228,8 @@ def _write_compute_policy(paths: LabPaths, values: dict[str, Any]) -> None:
 
 Kaggle notebooks, Colab, and SSH rental GPUs are optional backends discovered
 at init. Colab must not be placed on the critical path unless its runtime and
-persistence constraints are explicitly accepted. Paid jobs require automatic
-shutdown and measured cost accounting.
+persistence constraints are explicitly accepted. Paid Jobs are enabled only when a reviewed control adapter can enforce and
+confirm shutdown and obtain provider-side cost measurements.
 """,
     )
 
@@ -230,8 +240,9 @@ def _write_autonomy_policy(paths: LabPaths, values: dict[str, Any]) -> None:
         paths.setup / "AUTONOMY_POLICY.md",
         f"""# Autonomy policy
 
-The AI system owns scientific planning, hypothesis selection, experiment
-selection, continuation, withdrawal, and replanning.
+The AI system owns routine scientific planning, hypothesis selection, experiment
+selection, continuation, withdrawal, and replanning inside the human-owned
+Mission, value, data/legal, hard-budget, release, and external-action boundaries.
 
 - Research decisions: `{a["research_decisions"]}`
 - Campaign start: `{a["campaign_start"]}`
@@ -242,9 +253,10 @@ selection, continuation, withdrawal, and replanning.
 - Credentials/login: `{a["credentials"]}`
 - Destructive external actions: `{a["destructive_actions"]}`
 
-Missing optional advisors must degrade gracefully. Only external boundaries
-that an AI cannot lawfully or technically cross—login, terms acceptance,
-credentials, or hard resource limits—may pause the affected capability.
+Missing optional advisors must degrade gracefully. Human constitutional
+boundaries—Mission/value changes, data/legal policy, login and terms, hard-budget
+increases, public release, and destructive or irreversible external actions—may
+pause the affected capability. Routine experiment choices do not.
 """,
     )
 
@@ -262,7 +274,7 @@ local state. Roles are stable even when models change.
 |---|---|---|
 | Research Director | Codex App | Human conversation, control-plane observation, loop supervision |
 | Research Planner | Codex, isolated planner session | EDA, domain research, broad strategy, Campaign Contract |
-| Research Executor | GPT-5.6 Sol High, `/goal` | One campaign, deep autonomous experimentation |
+| Research Executor | Configured runtime profile, isolated fresh session | One campaign, deep autonomous experimentation |
 | General senior research partner | ChatGPT Project | Broad high-level consultation without a narrow role |
 | Methodology auditor | Claude Code | Independent CV/leakage/methodology criticism |
 | Realtime/divergent scout | Grok Build | X/community search and alternative hypotheses |
@@ -283,7 +295,7 @@ Initialization state was created at `{instance["created_at"]}`.
 - Profile: `{values["profile"]}`
 - Human language: `{values["language"]}`
 - Browser choice: `{values["browser"].get("mode") or "not selected yet"}`
-- Scientific decisions: autonomous
+- Routine scientific tactics: autonomous inside human-owned boundaries
 - Current stage: environment discovery
 
 Next steps:

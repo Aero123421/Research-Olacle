@@ -11,8 +11,9 @@ pollute strategic context with local logs and implementation details.
 ## Decision
 
 Research Planner and Research Executor use separate sessions and separate Context
-Packs. Planner expands and selects. One fresh GPT-5.6 Sol High `/goal` Executor
-pursues one Campaign. Only evidence-linked Handoff returns to Planner.
+Packs. Planner expands and selects. One fresh session resolved from the configured
+Research Executor runtime profile pursues one Campaign. Only an evidence-anchored
+Handoff returns to Planner.
 
 ## Consequences
 

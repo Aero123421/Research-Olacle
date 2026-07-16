@@ -8,7 +8,7 @@ The first-run interview exists to collect **human values and external limits**, 
 - Ask one decision at a time in plain Japanese.
 - Give a recommended choice and a short reason.
 - Avoid product jargon unless it changes the decision.
-- Never ask the human to make routine scientific decisions.
+- Do not turn routine scientific choices into approval prompts. The human still owns the Mission, value trade-offs, data/legal boundaries, hard budgets, public release, and irreversible external actions.
 - Save answers under `.research-lab/local/`; never store credentials.
 - Resume from existing answers after interruption instead of restarting the interview.
 
@@ -33,7 +33,7 @@ Create exactly one dedicated ChatGPT Project per research repository. Request pr
 
 ### 4. Compute limits
 
-Collect local GPU availability windows, default Campaign GPU budget, paid-compute hard limits, allowed providers, and automatic shutdown requirements. The Planner allocates resources inside these limits without waiting for human scientific approval.
+Collect local GPU availability windows, default Campaign GPU budget, paid-compute hard limits, allowed providers, and automatic shutdown requirements. The Planner allocates resources inside these limits without waiting for routine per-experiment approval; changing the human-owned hard limits requires explicit authority.
 
 ### 5. External boundaries
 

@@ -28,9 +28,17 @@ host and the research loop remains recoverable from files alone.
 - a draft Contract cannot start `/goal`
 - success, withdrawal, wall/GPU/cost budgets, and fixed evaluation are required
 - one fresh Executor is used per Campaign
+- Campaign and ResearchPlan lifecycle changes reject stale revisions and generic lifecycle patches
+- every active Campaign/Job write is bound to the current unexpired fenced Executor claim
+- stale claim takeover is blocked until queued/running Jobs are reconciled
 - `researchctl loop` derives transitions from durable state
-- completion requires an evidence-linked Handoff
+- completion rejects outstanding Jobs and requires an evidence-linked Handoff
+- the append-only epistemic ledger can record corroboration, refutation, expiry, and supersession
 - optional advisor failure does not stop the core loop
+- context manifests record trust classes, inclusion reasons, integrity hashes, and relevant exclusions
+- unknown compute resources fail closed; GPU accounting derives from typed resource metadata
+- running cancellation is not marked confirmed without external stop evidence
+- paid compute is rejected unless a code-registered adapter provides enforced cancellation and provider cost metering
 - ChatGPT consultation never silently falls back from the configured exact Pro label
 
 ## GitHub control plane

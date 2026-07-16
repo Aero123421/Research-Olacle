@@ -9,6 +9,31 @@
 - add cross-platform repository locks for IDs and mutable ledgers
 - pin development tooling and GitHub Actions; test Python 3.11–3.13 and Windows wrappers
 - replace the misleading quick Doctor-only secret workflow with full-history Gitleaks scanning
+- replace generic lifecycle patching with explicit revisioned ResearchPlan and
+  Campaign transitions
+- bind active Campaign and Job mutations to fenced Executor claims with monotonic
+  generations; stale takeover now requires outstanding Job reconciliation
+- separate Campaign phase from ownership, preserve Executor history, and reject
+  stale `expected_revision` writes
+- register typed compute resources, reject unknown or backend-mismatched devices,
+  and enforce Campaign/daily/monthly capacity and cost admission
+- distinguish cancellation requests from confirmed process termination; running
+  Job cancellation requires an auditable external stop reference
+- fail paid compute closed unless a reviewed control adapter implements enforced
+  cancellation and provider-side cost metering
+- add append-only epistemic claims with evidence, assumptions, confidence,
+  falsifiers, expiry, refutation, and supersession
+- add trust classes, inclusion reasons, exclusions, and integrity manifests to
+  bounded Context Packs
+- strengthen Campaign Contracts and Handoffs with counter-hypotheses, metric
+  gaming risks, reversal evidence, adoption exclusions, observations,
+  inferences, uncertainty, and epistemic residue
+- make Campaign/Plan ID ordering numeric and harden cross-platform lock ownership,
+  stale detection, and token-checked release
+- replace model IDs in core Campaign state with configurable runtime profiles and
+  document human-owned constitutional authority
+- classify the 0.1.x line as Alpha and document the boundary between deterministic
+  orchestration and provider-specific execution
 
 ## 0.1.0 — 2026-07-15
 

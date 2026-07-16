@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aero123421/Research-Olacle/blob/main/.research-lab/schema/epistemic-claim-event.schema.json",
+  "title": "Epistemic Claim Event",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "claim_id",
+    "statement",
+    "status",
+    "confidence",
+    "evidence_refs",
+    "assumptions",
+    "falsifier",
+    "recorded_by",
+    "recorded_at"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "pattern": "^CE-[a-f0-9]+$"},
+    "event_type": {"enum": ["asserted", "updated"]},
+    "claim_id": {"type": "string", "pattern": "^CLM-[0-9]{4,}$"},
+    "statement": {"type": "string", "minLength": 1},
+    "status": {"enum": ["tentative", "corroborated", "refuted", "superseded"]},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "falsifier": {"type": "string", "minLength": 1},
+    "expires_at": {"type": ["string", "null"], "format": "date-time"},
+    "source_campaign": {
+      "type": ["string", "null"],
+      "pattern": "^C-[0-9]{3,}$"
+    },
+    "recorded_by": {"type": "string", "minLength": 1},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "supersedes": {
+      "type": ["string", "null"],
+      "pattern": "^CLM-[0-9]{4,}$"
+    },
+    "superseded_by": {
+      "type": "string",
+      "pattern": "^CLM-[0-9]{4,}$"
+    }
+  }
+}

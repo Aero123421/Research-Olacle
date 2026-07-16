@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["codex", "research", "kaggle", "agents", "goal-mode", "github-projects"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Science/Research",
   "Operating System :: Microsoft :: Windows",

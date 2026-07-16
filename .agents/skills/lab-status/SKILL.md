@@ -15,10 +15,14 @@ description: Explain the autonomous research lab to a non-researcher without low
    - wall/GPU/cost and ETA
    - next event
    - harness health/external boundary
+   - any compute stop as requested, externally confirmed, or unconfirmed
 5. Explain at most two new technical terms in a normal update. Put technical
    evidence in a collapsible PR section or linked report.
 6. Emphasize changes since the previous update instead of repeating the whole
    mission.
 
-Do not ask the human for routine scientific direction. External action requests
-must be concrete and limited to the affected capability.
+Do not ask the human for routine scientific direction. The human still owns
+Mission/value choices, legal and data boundaries, hard budgets, public release,
+and irreversible external actions. External action requests must be concrete and
+limited to the affected capability. Never report a cancellation request as a
+confirmed process stop without an external stop reference.

@@ -1,12 +1,12 @@
 name: Research Harness Exception
-about: External boundary or infrastructure failure, not a scientific approval request
+about: Human-owned constitutional boundary or infrastructure failure, not routine experiment approval
 labels: ["research:exception"]
 body:
   - type: dropdown
     id: category
     attributes:
       label: Category
-      options: [Login, Terms, Hard budget, Browser, Agent runtime, Compute, GitHub, Data access, Security]
+      options: [Mission or values, Login, Terms or legal, Hard budget, Publication, Irreversible action, Browser, Agent runtime, Compute, GitHub, Data access, Security]
     validations:
       required: true
   - type: textarea

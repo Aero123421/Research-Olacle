@@ -24,13 +24,49 @@ def _lock_age_seconds(path: Path) -> float:
         return 0.0
 
 
-def _read_token(path: Path) -> str | None:
+def _read_lock_payload(path: Path) -> dict[str, object] | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, json.JSONDecodeError):
         return None
-    token = value.get("token") if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def _read_token(path: Path) -> str | None:
+    value = _read_lock_payload(path)
+    token = value.get("token") if value else None
     return token if isinstance(token, str) else None
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        # Windows and restricted containers may not expose a definitive answer.
+        # Prefer preserving the lock over stealing it from a live process.
+        return True
+    return True
+
+
+def _lock_can_be_reclaimed(path: Path, stale_after_seconds: float) -> bool:
+    if stale_after_seconds <= 0 or _lock_age_seconds(path) < stale_after_seconds:
+        return False
+    payload = _read_lock_payload(path)
+    if not payload:
+        return True
+    host = payload.get("host")
+    pid = payload.get("pid")
+    if host == socket.gethostname() and isinstance(pid, int):
+        return not _pid_is_alive(pid)
+    # A remote-host lock cannot be probed safely in the single-host harness.
+    # Reclaim it only after the configured stale lease has elapsed.
+    return True
 
 
 @contextmanager
@@ -45,8 +81,8 @@ def file_lock(
 
     The lock lives in ignored repository-local state. ``O_EXCL`` is atomic on
     Windows and POSIX local filesystems, which is sufficient for the harness's
-    single-host Planner/Executor model. Stale locks are recoverable after the
-    configured lease age.
+    single-host Planner/Executor model. A same-host lock is reclaimed only when
+    its lease is old and the recorded owner process is no longer alive.
     """
 
     ensure_parent(path)
@@ -65,7 +101,7 @@ def file_lock(
         try:
             descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            if stale_after_seconds > 0 and _lock_age_seconds(path) >= stale_after_seconds:
+            if _lock_can_be_reclaimed(path, stale_after_seconds):
                 try:
                     path.unlink()
                 except FileNotFoundError:

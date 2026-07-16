@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
+import socket
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -11,6 +15,7 @@ from codex_research_harness.consultation import (
     record_chatgpt_project,
     verify_chatgpt_project,
 )
+from codex_research_harness.locking import LockTimeoutError, file_lock
 from codex_research_harness.plans import create_research_plan, list_plan_ids
 from tests.helpers import make_repo
 
@@ -44,6 +49,57 @@ class SharedStateLockingTests(unittest.TestCase):
             self.assertEqual(len(set(plans)), 12)
             self.assertEqual(sorted(plans), [f"RP-{index:03d}" for index in range(1, 13)])
             self.assertEqual(list_plan_ids(paths), sorted(plans))
+
+    def test_old_lock_owned_by_live_process_is_not_stolen(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            lock_path = Path(raw) / "live.lock"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "live-owner",
+                        "pid": os.getpid(),
+                        "host": socket.gethostname(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            old = time.time() - 3600
+            os.utime(lock_path, (old, old))
+            with self.assertRaises(LockTimeoutError):
+                with file_lock(
+                    lock_path,
+                    timeout_seconds=0.05,
+                    stale_after_seconds=1,
+                    poll_seconds=0.01,
+                ):
+                    self.fail("A live owner's lock must not be stolen")
+            self.assertTrue(lock_path.exists())
+
+    def test_old_lock_with_dead_owner_is_reclaimed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            lock_path = Path(raw) / "dead.lock"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "token": "dead-owner",
+                        "pid": 2_147_483_647,
+                        "host": socket.gethostname(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            old = time.time() - 3600
+            os.utime(lock_path, (old, old))
+            with file_lock(
+                lock_path,
+                timeout_seconds=0.2,
+                stale_after_seconds=1,
+                poll_seconds=0.01,
+            ):
+                self.assertTrue(lock_path.exists())
+            self.assertFalse(lock_path.exists())
 
     def test_parallel_consultation_id_allocation_is_unique(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

@@ -26,6 +26,50 @@ class SchemaTests(unittest.TestCase):
         value["budget"]["gpu_hours"] = -1
         self.assertTrue(validate_campaign_contract(value))
 
+    def test_v2_contract_requires_epistemic_safeguards(self) -> None:
+        value = ready_contract()
+        value.pop("counter_hypotheses")
+        issues = validate_campaign_contract(value)
+        self.assertTrue(any(issue.path == "$.counter_hypotheses" for issue in issues))
+
+    def test_legacy_v1_contract_remains_readable(self) -> None:
+        value = ready_contract()
+        value["schema_version"] = 1
+        for key in (
+            "counter_hypotheses",
+            "metric_gaming_risks",
+            "reversal_evidence",
+            "adoption_exclusions",
+            "amendment_policy",
+        ):
+            value.pop(key)
+        value["owner"] = {
+            "runtime": "codex-goal",
+            "model": "legacy-model",
+            "effort": "high",
+        }
+        self.assertEqual(validate_campaign_contract(value), [])
+
+    def test_v2_handoff_requires_epistemic_residue(self) -> None:
+        value = valid_handoff()
+        value.pop("unresolved_questions")
+        issues = validate_campaign_handoff(value)
+        self.assertTrue(any(issue.path == "$.unresolved_questions" for issue in issues))
+
+    def test_legacy_v1_handoff_remains_readable(self) -> None:
+        value = valid_handoff()
+        value.pop("schema_version")
+        for key in (
+            "assumptions",
+            "unresolved_questions",
+            "unverified_leads",
+            "decision_reversal_evidence",
+        ):
+            value.pop(key)
+        for key in ("observation", "inference", "confidence"):
+            value["evidence"][0].pop(key)
+        self.assertEqual(validate_campaign_handoff(value), [])
+
     def test_handoff_requires_known_outcome(self) -> None:
         value = valid_handoff()
         value["outcome"] = "magic"

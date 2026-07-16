@@ -6,23 +6,53 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from .config import load_compute_config
+from .config import load_agent_config, load_compute_config
 from .locking import lab_lock
 from .models import LabPaths
 from .schema import validate_campaign_contract, validate_campaign_handoff, validate_or_raise
 from .utils import atomic_write_json, atomic_write_text, deep_merge, iso_now, read_json, safe_relpath
 
 CAMPAIGN_PATTERN = re.compile(r"^C-(\d{3,})$")
+ACTIVE_CAMPAIGN_STATUSES = frozenset({"executing", "running", "waiting", "validating", "reporting"})
+TERMINAL_CAMPAIGN_STATUSES = frozenset({"completed", "stopped"})
+CAMPAIGN_STATUS_TRANSITIONS = {
+    "executing": frozenset({"running", "waiting", "validating", "reporting"}),
+    "running": frozenset({"waiting", "validating", "reporting"}),
+    "waiting": frozenset({"running", "validating", "reporting"}),
+    "validating": frozenset({"running", "waiting", "reporting"}),
+    "reporting": frozenset({"running", "validating"}),
+}
+CHECKPOINT_FIELDS = frozenset(
+    {
+        "health",
+        "research_signal",
+        "current_action",
+        "next_actions",
+        "progress",
+        "resources",
+        "forecast",
+        "risks",
+    }
+)
+
+
+class CampaignStateConflictError(RuntimeError):
+    """Raised when a caller attempts to update a stale Campaign revision."""
+
+
+class ExecutorClaimError(ValueError):
+    """Raised when an operation is not authorized by the current Executor lease."""
 
 
 def list_campaign_ids(paths: LabPaths) -> list[str]:
     if not paths.campaigns.exists():
         return []
-    return sorted(
+    values = [
         child.name
         for child in paths.campaigns.iterdir()
         if child.is_dir() and CAMPAIGN_PATTERN.match(child.name)
-    )
+    ]
+    return sorted(values, key=lambda value: int(CAMPAIGN_PATTERN.match(value).group(1)))
 
 
 def next_campaign_id(paths: LabPaths) -> str:
@@ -36,7 +66,7 @@ def default_contract(campaign_id: str, title: str, goal: str) -> dict[str, Any]:
     """Return an intentionally draft contract that Planner must complete."""
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "contract_status": "draft",
         "campaign_id": campaign_id,
         "title": title,
@@ -50,6 +80,19 @@ def default_contract(campaign_id: str, title: str, goal: str) -> dict[str, Any]:
         },
         "success_conditions": ["Planner must define a measurable, evidence-backed success condition."],
         "withdrawal_conditions": ["Planner must define a measurable stop condition."],
+        "counter_hypotheses": ["Planner must define at least one credible competing explanation."],
+        "metric_gaming_risks": ["Planner must define how the success criteria could be gamed or misread."],
+        "reversal_evidence": ["Planner must define evidence that would reverse the campaign decision."],
+        "adoption_exclusions": ["Planner must define when a nominal success must not be adopted."],
+        "amendment_policy": {
+            "requires_replanning_for": [
+                "goal",
+                "evaluation_contract",
+                "budget",
+                "fixed_constraints",
+            ],
+            "record_location": "research/decisions/",
+        },
         "budget": {"wall_hours": 12.0, "gpu_hours": 8.0, "paid_compute_jpy": 0.0},
         "checkpoint_policy": {
             "budget_fractions": [0.25, 0.5, 0.8],
@@ -77,21 +120,35 @@ def default_contract(campaign_id: str, title: str, goal: str) -> dict[str, Any]:
             "Experiment registry entries",
             "Reproducible artifacts and commit references",
         ],
-        "owner": {"runtime": "codex-goal", "model": "gpt-5.6-sol", "effort": "high"},
+        "owner": {"runtime_profile": "research_executor"},
         "created_at": iso_now(),
     }
+
+
+def _validate_runtime_profile(paths: LabPaths, contract: dict[str, Any]) -> None:
+    owner = contract.get("owner")
+    if not isinstance(owner, dict):
+        return
+    profile = owner.get("runtime_profile")
+    if not isinstance(profile, str) or not profile.strip():
+        return
+    roles = load_agent_config(paths).get("roles", {})
+    if not isinstance(roles, dict) or not isinstance(roles.get(profile), dict):
+        raise ValueError(f"Campaign owner runtime_profile {profile!r} is not configured")
 
 
 def _initial_state(campaign_id: str) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "campaign_id": campaign_id,
+        "revision": 0,
+        "executor_history": [],
         "status": "draft",
         "health": "on_track",
         "phase": "contract",
         "research_signal": "unknown",
         "current_action": "Complete and validate the Campaign Contract",
-        "next_actions": ["Build executor context pack", "Start GPT-5.6 Sol High Goal Mode"],
+        "next_actions": ["Build executor context pack", "Start configured Research Executor profile"],
         "progress": {"completed_milestones": 0, "total_milestones": 0},
         "resources": {"wall_hours_used": 0.0, "gpu_hours_used": 0.0, "cost_jpy": 0.0},
         "budget_fraction_used": 0.0,
@@ -160,8 +217,13 @@ def finalize_campaign_contract(paths: LabPaths, campaign_id: str) -> dict[str, A
         candidate["contract_status"] = "ready"
         candidate["finalized_at"] = iso_now()
         validate_or_raise(candidate, lambda value: validate_campaign_contract(value, require_ready=True))
-        atomic_write_json(contract_path, candidate)
+        _validate_runtime_profile(paths, candidate)
         state = read_json(directory / "STATE.json", default={})
+        if state.get("status") not in {"draft", "ready"}:
+            raise ValueError(
+                f"Campaign {campaign_id} cannot finalize its Contract from {state.get('status')!r}"
+            )
+        atomic_write_json(contract_path, candidate)
         state = deep_merge(
             state,
             {
@@ -181,11 +243,14 @@ def activate_campaign(paths: LabPaths, campaign_id: str) -> dict[str, Any]:
     with lab_lock(paths, f"campaign-{campaign_id}"):
         contract = read_json(directory / "CONTRACT.json")
         validate_or_raise(contract, lambda value: validate_campaign_contract(value, require_ready=True))
+        _validate_runtime_profile(paths, contract)
         state = read_json(directory / "STATE.json", default={})
-        if state.get("status") == "completed":
-            raise ValueError(f"Campaign {campaign_id} is already completed")
-        if state.get("status") in {"executing", "running", "waiting", "validating", "reporting"}:
+        if state.get("status") in TERMINAL_CAMPAIGN_STATUSES:
+            raise ValueError(f"Campaign {campaign_id} is already {state.get('status')}")
+        if state.get("status") in ACTIVE_CAMPAIGN_STATUSES:
             raise ValueError(f"Campaign {campaign_id} already has an active Executor claim")
+        if state.get("status") != "ready":
+            raise ValueError(f"Campaign {campaign_id} must be ready before activation")
         state = deep_merge(
             state,
             {
@@ -200,11 +265,70 @@ def activate_campaign(paths: LabPaths, campaign_id: str) -> dict[str, Any]:
         return state
 
 
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
         return None
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _claim_generation(executor: dict[str, Any]) -> int:
+    value = executor.get("generation")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        # Existing repositories may contain a pre-fencing claim. Treat that
+        # claim as generation 1 so its next takeover receives generation 2.
+        return 1
+    return value
+
+
+def require_current_executor_claim(
+    state: dict[str, Any],
+    claim_id: str | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return the current Executor claim or reject a stale/foreign caller."""
+
+    if not claim_id:
+        raise ExecutorClaimError("claim_id is required for this Campaign operation")
+    if state.get("status") not in ACTIVE_CAMPAIGN_STATUSES:
+        raise ExecutorClaimError(
+            f"Campaign {state.get('campaign_id', 'unknown')} has no active Executor claim"
+        )
+    current = state.get("executor") if isinstance(state.get("executor"), dict) else {}
+    if current.get("claim_id") != claim_id:
+        raise ExecutorClaimError(f"Executor claim for {state.get('campaign_id', 'unknown')} is not current")
+    expiry = _parse_iso(current.get("lease_expires_at"))
+    effective_now = now or datetime.now(UTC)
+    if not expiry or expiry <= effective_now:
+        raise ExecutorClaimError(f"Executor claim for {state.get('campaign_id', 'unknown')} is expired")
+    result = dict(current)
+    result["generation"] = _claim_generation(current)
+    result["fencing_token"] = result["generation"]
+    return result
+
+
+def _validate_checkpoint_patch(patch: dict[str, Any]) -> None:
+    if not isinstance(patch, dict):
+        raise ValueError("Campaign checkpoint patch must be an object")
+    forbidden = sorted(set(patch) - CHECKPOINT_FIELDS)
+    if forbidden:
+        raise ValueError("Campaign checkpoint cannot modify authoritative field(s): " + ", ".join(forbidden))
+    if "current_action" in patch and not isinstance(patch["current_action"], str):
+        raise ValueError("current_action must be a string")
+    if "next_actions" in patch:
+        actions = patch["next_actions"]
+        if not isinstance(actions, list) or not all(isinstance(item, str) for item in actions):
+            raise ValueError("next_actions must be an array of strings")
+    if "progress" in patch and not isinstance(patch["progress"], dict):
+        raise ValueError("progress must be an object")
+    if "resources" in patch and not isinstance(patch["resources"], dict):
+        raise ValueError("resources must be an object")
+    if "forecast" in patch and not isinstance(patch["forecast"], dict):
+        raise ValueError("forecast must be an object")
 
 
 def claim_executor(
@@ -222,67 +346,107 @@ def claim_executor(
     if lease_minutes <= 0:
         raise ValueError("lease_minutes must be positive")
     directory = paths.campaigns / campaign_id
-    with lab_lock(paths, f"campaign-{campaign_id}"):
-        contract = read_json(directory / "CONTRACT.json", default={})
-        validate_or_raise(contract, lambda value: validate_campaign_contract(value, require_ready=True))
-        state = read_json(directory / "STATE.json", default={})
-        if not state:
-            raise FileNotFoundError(f"Missing state for {campaign_id}")
 
-        now = datetime.now(UTC)
-        current = state.get("executor") if isinstance(state.get("executor"), dict) else {}
-        if state.get("status") == "executing":
-            expiry = _parse_iso(current.get("lease_expires_at"))
-            stale = bool(expiry and expiry <= now)
-            if not stale or not allow_stale_takeover:
-                raise ValueError(
-                    f"Campaign {campaign_id} is already claimed by "
-                    f"{current.get('session_id') or current.get('claim_id') or 'another executor'}"
-                )
-        elif state.get("status") != "ready":
-            raise ValueError(f"Campaign {campaign_id} must be ready before it can be claimed")
+    # Job mutations acquire the global Job lock before the Campaign lock. Claim
+    # takeover uses the same order so no Job can be admitted or reconciled
+    # between the stale-lease check and the new fencing token being persisted.
+    from .jobs import load_jobs
 
-        # Validate the exact bounded pack before persisting ownership. Imported
-        # lazily to keep the campaign model independent from pack construction.
-        from .context import sha256_file, validate_context_pack
+    with lab_lock(paths, "jobs"):
+        jobs = load_jobs(paths)
+        with lab_lock(paths, f"campaign-{campaign_id}"):
+            contract = read_json(directory / "CONTRACT.json", default={})
+            validate_or_raise(
+                contract,
+                lambda value: validate_campaign_contract(value, require_ready=True),
+            )
+            _validate_runtime_profile(paths, contract)
+            state = read_json(directory / "STATE.json", default={})
+            if not state:
+                raise FileNotFoundError(f"Missing state for {campaign_id}")
 
-        contract_path = directory / "CONTRACT.json"
-        issues = validate_context_pack(
-            paths,
-            directory / "CONTEXT_PACK.md",
-            expected_role="research-executor",
-            expected_metadata={
-                "campaign_id": campaign_id,
-                "contract_sha256": sha256_file(contract_path),
-            },
-        )
-        if issues:
-            raise ValueError("Executor context pack is invalid: " + "; ".join(issues))
+            now = datetime.now(UTC)
+            current = state.get("executor") if isinstance(state.get("executor"), dict) else {}
+            if state.get("status") in ACTIVE_CAMPAIGN_STATUSES:
+                expiry = _parse_iso(current.get("lease_expires_at"))
+                stale = expiry is None or expiry <= now
+                if not stale or not allow_stale_takeover:
+                    raise ValueError(
+                        f"Campaign {campaign_id} is already claimed by "
+                        f"{current.get('session_id') or current.get('claim_id') or 'another executor'}"
+                    )
+                outstanding = [
+                    str(job.get("job_id"))
+                    for job in jobs
+                    if job.get("campaign_id") == campaign_id and job.get("status") in {"queued", "running"}
+                ]
+                if outstanding:
+                    raise ExecutorClaimError(
+                        f"Campaign {campaign_id} has outstanding Jobs from the stale Executor: "
+                        + ", ".join(outstanding)
+                        + "; reconcile them as failed/cancelled before stale takeover"
+                    )
+            elif state.get("status") != "ready":
+                raise ValueError(f"Campaign {campaign_id} must be ready before it can be claimed")
 
-        claim_id = uuid.uuid4().hex
-        actual_session_id = session_id or f"pending-{claim_id[:12]}"
-        heartbeat = now.replace(microsecond=0).isoformat()
-        lease_expires = (now + timedelta(minutes=lease_minutes)).replace(microsecond=0).isoformat()
-        state = deep_merge(
-            state,
-            {
-                "status": "executing",
-                "phase": "goal_mode",
-                "current_action": "Run one claimed GPT-5.6 Sol High Goal Mode executor",
-                "executor": {
-                    "claim_id": claim_id,
-                    "session_id": actual_session_id,
-                    "owner": owner,
-                    "worktree": worktree,
-                    "started_at": heartbeat,
-                    "heartbeat_at": heartbeat,
-                    "lease_expires_at": lease_expires,
+            # Validate the exact bounded pack before persisting ownership.
+            from .context import sha256_file, validate_context_pack
+
+            contract_path = directory / "CONTRACT.json"
+            issues = validate_context_pack(
+                paths,
+                directory / "CONTEXT_PACK.md",
+                expected_role="research-executor",
+                expected_metadata={
+                    "campaign_id": campaign_id,
+                    "contract_sha256": sha256_file(contract_path),
                 },
-                "last_checkpoint_at": heartbeat,
-            },
-        )
-        _persist_state(directory, state, contract)
-        return state
+            )
+            if issues:
+                raise ValueError("Executor context pack is invalid: " + "; ".join(issues))
+
+            claim_id = uuid.uuid4().hex
+            generation = _claim_generation(current) + 1 if current else 1
+            actual_session_id = session_id or f"pending-{claim_id[:12]}"
+            heartbeat = now.replace(microsecond=0).isoformat()
+            lease_expires = (now + timedelta(minutes=lease_minutes)).replace(microsecond=0).isoformat()
+            history_value = state.get("executor_history", [])
+            if not isinstance(history_value, list):
+                raise ValueError("Persisted executor_history must be an array")
+            executor_history = list(history_value)
+            if current:
+                executor_history.append(
+                    {
+                        **current,
+                        "status": "superseded",
+                        "released_at": heartbeat,
+                        "release_reason": "stale_takeover",
+                    }
+                )
+            state = deep_merge(
+                state,
+                {
+                    "status": "executing",
+                    "phase": "goal_mode",
+                    "current_action": "Run one claimed configured Research Executor",
+                    "executor_history": executor_history,
+                    "executor": {
+                        "claim_id": claim_id,
+                        "generation": generation,
+                        "fencing_token": generation,
+                        "session_id": actual_session_id,
+                        "owner": owner,
+                        "worktree": worktree,
+                        "status": "active",
+                        "started_at": heartbeat,
+                        "heartbeat_at": heartbeat,
+                        "lease_expires_at": lease_expires,
+                    },
+                    "last_checkpoint_at": heartbeat,
+                },
+            )
+            _persist_state(directory, state, contract)
+            return state
 
 
 def heartbeat_executor(
@@ -299,11 +463,10 @@ def heartbeat_executor(
     with lab_lock(paths, f"campaign-{campaign_id}"):
         state = read_json(directory / "STATE.json", default={})
         contract = read_json(directory / "CONTRACT.json", default={})
-        current = state.get("executor") if isinstance(state.get("executor"), dict) else {}
-        if state.get("status") != "executing" or current.get("claim_id") != claim_id:
-            raise ValueError(f"Executor claim for {campaign_id} is not current")
         now = datetime.now(UTC)
+        current = require_current_executor_claim(state, claim_id, now=now)
         heartbeat = now.replace(microsecond=0).isoformat()
+        current["status"] = "active"
         current["heartbeat_at"] = heartbeat
         current["lease_expires_at"] = (
             (now + timedelta(minutes=lease_minutes)).replace(microsecond=0).isoformat()
@@ -316,74 +479,262 @@ def heartbeat_executor(
         return state
 
 
-def update_campaign_state(paths: LabPaths, campaign_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+def update_campaign_state(
+    paths: LabPaths,
+    campaign_id: str,
+    patch: dict[str, Any],
+    *,
+    claim_id: str | None,
+    expected_revision: int | None = None,
+) -> dict[str, Any]:
+    """Persist an Executor checkpoint without exposing lifecycle authority."""
+
+    _validate_checkpoint_patch(patch)
     directory = paths.campaigns / campaign_id
     with lab_lock(paths, f"campaign-{campaign_id}"):
-        state_path = directory / "STATE.json"
-        state = read_json(state_path, default={})
+        state = read_json(directory / "STATE.json", default={})
         contract = read_json(directory / "CONTRACT.json", default={})
         if not state:
             raise FileNotFoundError(f"Missing state for {campaign_id}")
-        for key in ("campaign_id", "schema_version"):
-            if key in patch and patch[key] != state.get(key):
-                raise ValueError(f"Cannot change {key}")
+        require_current_executor_claim(state, claim_id)
         updated = deep_merge(state, patch)
         _validate_resource_state(updated)
+        _validate_monotonic_resources(state, updated)
+        _apply_budget_status(updated, contract)
+        updated["last_checkpoint_at"] = iso_now()
+        _persist_state(
+            directory,
+            updated,
+            contract,
+            expected_revision=expected_revision,
+        )
+        return updated
+
+
+def transition_campaign_state(
+    paths: LabPaths,
+    campaign_id: str,
+    *,
+    claim_id: str,
+    status: str,
+    phase: str,
+    current_action: str | None = None,
+    expected_revision: int | None = None,
+) -> dict[str, Any]:
+    """Perform an explicit Executor-owned active lifecycle transition."""
+
+    if status not in ACTIVE_CAMPAIGN_STATUSES:
+        raise ValueError(f"status must be one of {sorted(ACTIVE_CAMPAIGN_STATUSES)}")
+    if not isinstance(phase, str) or not phase.strip():
+        raise ValueError("phase must be a non-empty string")
+    if current_action is not None and not current_action.strip():
+        raise ValueError("current_action must be non-empty when provided")
+
+    directory = paths.campaigns / campaign_id
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        state = read_json(directory / "STATE.json", default={})
+        contract = read_json(directory / "CONTRACT.json", default={})
+        if not state:
+            raise FileNotFoundError(f"Missing state for {campaign_id}")
+        require_current_executor_claim(state, claim_id)
+        current_status = state.get("status")
+        if status != current_status and status not in CAMPAIGN_STATUS_TRANSITIONS.get(
+            str(current_status), frozenset()
+        ):
+            raise ValueError(f"Campaign cannot transition from {current_status!r} to {status!r}")
+        patch: dict[str, Any] = {
+            "status": status,
+            "phase": phase.strip(),
+            "last_checkpoint_at": iso_now(),
+        }
+        if current_action is not None:
+            patch["current_action"] = current_action.strip()
+        updated = deep_merge(state, patch)
+        _validate_resource_state(updated)
+        _apply_budget_status(updated, contract)
+        _persist_state(
+            directory,
+            updated,
+            contract,
+            expected_revision=expected_revision,
+        )
+        return updated
+
+
+def sync_campaign_accounting(
+    paths: LabPaths,
+    campaign_id: str,
+    *,
+    resources: dict[str, Any],
+    current_action: str | None = None,
+    next_actions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Persist resource totals derived from the authoritative Job ledger."""
+
+    directory = paths.campaigns / campaign_id
+    with lab_lock(paths, f"campaign-{campaign_id}"):
+        state = read_json(directory / "STATE.json", default={})
+        contract = read_json(directory / "CONTRACT.json", default={})
+        if not state:
+            raise FileNotFoundError(f"Missing state for {campaign_id}")
+        if state.get("status") in TERMINAL_CAMPAIGN_STATUSES:
+            return state
+        current_resources = state.get("resources", {})
+        if not isinstance(current_resources, dict):
+            raise ValueError("Persisted Campaign resources must be an object")
+        monotonic_resources = {
+            key: max(
+                float(current_resources.get(key, 0) or 0),
+                float(resources.get(key, 0) or 0),
+            )
+            for key in ("wall_hours_used", "gpu_hours_used", "cost_jpy")
+        }
+        patch: dict[str, Any] = {"resources": monotonic_resources}
+        if current_action is not None:
+            patch["current_action"] = current_action
+        if next_actions is not None:
+            patch["next_actions"] = next_actions
+        updated = deep_merge(state, patch)
+        _validate_resource_state(updated)
+        _validate_monotonic_resources(state, updated)
         _apply_budget_status(updated, contract)
         updated["last_checkpoint_at"] = iso_now()
         _persist_state(directory, updated, contract)
         return updated
 
 
-def complete_campaign(paths: LabPaths, campaign_id: str, handoff: dict[str, Any]) -> dict[str, Any]:
+def _resource_floor_from_jobs(paths: LabPaths, campaign_id: str) -> dict[str, float]:
+    # Imported lazily because jobs.py imports the Campaign claim verifier.
+    from .jobs import load_jobs
+
+    jobs = load_jobs(paths)
+    selected = [job for job in jobs if job.get("campaign_id") == campaign_id]
+    return {
+        "wall_hours": sum(float(job.get("actual_wall_hours", 0) or 0) for job in selected),
+        "gpu_hours": sum(float(job.get("actual_gpu_hours", 0) or 0) for job in selected),
+        "cost_jpy": sum(float(job.get("actual_cost_jpy", 0) or 0) for job in selected),
+    }
+
+
+def complete_campaign(
+    paths: LabPaths,
+    campaign_id: str,
+    handoff: dict[str, Any],
+    *,
+    claim_id: str | None,
+    expected_revision: int | None = None,
+) -> dict[str, Any]:
     directory = paths.campaigns / campaign_id
-    with lab_lock(paths, f"campaign-{campaign_id}"):
-        if not directory.exists():
-            raise FileNotFoundError(f"Unknown campaign {campaign_id}")
-        handoff = dict(handoff)
-        handoff["campaign_id"] = campaign_id
-        validate_or_raise(handoff, validate_campaign_handoff)
-        for index, evidence in enumerate(handoff.get("evidence", [])):
-            artifact = evidence.get("artifact") if isinstance(evidence, dict) else None
-            if not isinstance(artifact, str):
-                continue
-            artifact_path = paths.root / artifact
-            safe_relpath(artifact_path, paths.root)
-            if not artifact_path.exists():
-                raise FileNotFoundError(
-                    f"Handoff evidence artifact does not exist: evidence[{index}] {artifact!r}"
+    if not directory.exists():
+        raise FileNotFoundError(f"Unknown campaign {campaign_id}")
+
+    handoff = dict(handoff)
+    handoff["campaign_id"] = campaign_id
+    validate_or_raise(handoff, validate_campaign_handoff)
+
+    # Every Job mutation uses this same lock order, preventing a new Job from
+    # being admitted between the outstanding-job check and Campaign completion.
+    with lab_lock(paths, "jobs"):
+        with lab_lock(paths, f"campaign-{campaign_id}"):
+            state = read_json(directory / "STATE.json", default={})
+            contract = read_json(directory / "CONTRACT.json", default={})
+            existing = read_json(directory / "HANDOFF.json", default=None)
+            if state.get("status") == "completed" and existing == handoff:
+                return state
+            if existing is not None and existing != handoff:
+                raise ValueError(f"Campaign {campaign_id} already has a different completed handoff")
+
+            current_claim = require_current_executor_claim(state, claim_id)
+            _validate_expected_revision(state, expected_revision)
+
+            from .jobs import load_jobs
+
+            jobs = [job for job in load_jobs(paths) if job.get("campaign_id") == campaign_id]
+            outstanding = [
+                str(job.get("job_id")) for job in jobs if job.get("status") in {"queued", "running"}
+            ]
+            if outstanding:
+                raise ValueError(
+                    f"Campaign {campaign_id} cannot complete with outstanding jobs: " + ", ".join(outstanding)
                 )
-        existing = read_json(directory / "HANDOFF.json", default=None)
-        if existing is not None and existing != handoff:
-            raise ValueError(f"Campaign {campaign_id} already has a different completed handoff")
-        atomic_write_json(directory / "HANDOFF.json", handoff)
-        atomic_write_text(directory / "HANDOFF.md", render_handoff_markdown(handoff))
-        state = read_json(directory / "STATE.json", default={})
-        actual = handoff["resources_actual"]
-        state = deep_merge(
-            state,
-            {
-                "status": "completed",
-                "phase": "handoff",
-                "current_action": "Research Planner must synthesize the handoff",
-                "next_actions": [
-                    "Resume or create Research Planner session",
-                    "Update strategy memory",
-                    "Select next campaign",
-                ],
-                "outcome": handoff["outcome"],
-                "resources": {
-                    "wall_hours_used": actual["wall_hours"],
-                    "gpu_hours_used": actual["gpu_hours"],
-                    "cost_jpy": actual["cost_jpy"],
+
+            for index, evidence in enumerate(handoff.get("evidence", [])):
+                artifact = evidence.get("artifact") if isinstance(evidence, dict) else None
+                if not isinstance(artifact, str):
+                    continue
+                artifact_path = paths.root / artifact
+                safe_relpath(artifact_path, paths.root)
+                if not artifact_path.exists():
+                    raise FileNotFoundError(
+                        f"Handoff evidence artifact does not exist: evidence[{index}] {artifact!r}"
+                    )
+
+            state_resources = state.get("resources", {}) if isinstance(state.get("resources"), dict) else {}
+            ledger_floor = _resource_floor_from_jobs(paths, campaign_id)
+            floors = {
+                "wall_hours": max(
+                    ledger_floor["wall_hours"],
+                    float(state_resources.get("wall_hours_used", 0) or 0),
+                ),
+                "gpu_hours": max(
+                    ledger_floor["gpu_hours"],
+                    float(state_resources.get("gpu_hours_used", 0) or 0),
+                ),
+                "cost_jpy": max(
+                    ledger_floor["cost_jpy"],
+                    float(state_resources.get("cost_jpy", 0) or 0),
+                ),
+            }
+            actual = handoff["resources_actual"]
+            underreported = [
+                key for key, floor in floors.items() if float(actual.get(key, 0) or 0) + 1e-9 < floor
+            ]
+            if underreported:
+                details = ", ".join(
+                    f"{key}={float(actual.get(key, 0) or 0):.6g} < {floors[key]:.6g}" for key in underreported
+                )
+                raise ValueError(f"Handoff resources_actual under-reports durable usage: {details}")
+
+            completed_at = iso_now()
+            executor = dict(current_claim)
+            executor.update({"status": "released", "released_at": completed_at})
+            state = deep_merge(
+                state,
+                {
+                    "status": "completed",
+                    "phase": "handoff",
+                    "current_action": "Research Planner must synthesize the handoff",
+                    "next_actions": [
+                        "Resume or create Research Planner session",
+                        "Update strategy memory",
+                        "Select next campaign",
+                    ],
+                    "outcome": handoff["outcome"],
+                    "resources": {
+                        "wall_hours_used": actual["wall_hours"],
+                        "gpu_hours_used": actual["gpu_hours"],
+                        "cost_jpy": actual["cost_jpy"],
+                    },
+                    "executor": executor,
+                    "completed_by_claim_id": claim_id,
+                    "completed_at": completed_at,
+                    "last_checkpoint_at": completed_at,
                 },
-                "last_checkpoint_at": iso_now(),
-            },
-        )
-        contract = read_json(directory / "CONTRACT.json", default={})
-        _apply_budget_status(state, contract)
-        _persist_state(directory, state, contract)
-        return state
+            )
+            _apply_budget_status(state, contract)
+            # Persist the immutable evidence package first. If the state write
+            # is interrupted, retrying the same Handoff is safe. Persisting the
+            # terminal state first could leave a completed Campaign with no
+            # recoverable Handoff.
+            atomic_write_json(directory / "HANDOFF.json", handoff)
+            atomic_write_text(directory / "HANDOFF.md", render_handoff_markdown(handoff))
+            _persist_state(
+                directory,
+                state,
+                contract,
+                expected_revision=expected_revision,
+            )
+            return state
 
 
 def _validate_resource_state(state: dict[str, Any]) -> None:
@@ -394,6 +745,18 @@ def _validate_resource_state(state: dict[str, Any]) -> None:
         value = resources.get(key, 0)
         if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
             raise ValueError(f"resources.{key} must be a non-negative number")
+
+
+def _validate_monotonic_resources(previous: dict[str, Any], updated: dict[str, Any]) -> None:
+    previous_resources = previous.get("resources", {})
+    updated_resources = updated.get("resources", {})
+    if not isinstance(previous_resources, dict) or not isinstance(updated_resources, dict):
+        raise ValueError("resources must be an object")
+    for key in ("wall_hours_used", "gpu_hours_used", "cost_jpy"):
+        before = float(previous_resources.get(key, 0) or 0)
+        after = float(updated_resources.get(key, 0) or 0)
+        if after + 1e-9 < before:
+            raise ValueError(f"resources.{key} cannot decrease")
 
 
 def _apply_budget_status(state: dict[str, Any], contract: dict[str, Any]) -> None:
@@ -427,8 +790,31 @@ def _apply_budget_status(state: dict[str, Any], contract: dict[str, Any]) -> Non
         state["budget_status"] = "within_budget"
 
 
-def _persist_state(directory: Path, state: dict[str, Any], contract: dict[str, Any]) -> None:
-    atomic_write_json(directory / "STATE.json", state)
+def _validate_expected_revision(state: dict[str, Any], expected_revision: int | None) -> None:
+    current_revision = state.get("revision", 0)
+    if isinstance(current_revision, bool) or not isinstance(current_revision, int) or current_revision < 0:
+        raise CampaignStateConflictError("Persisted Campaign revision is invalid")
+    if expected_revision is not None and expected_revision != current_revision:
+        raise CampaignStateConflictError(
+            f"Campaign revision conflict: expected {expected_revision}, current {current_revision}"
+        )
+
+
+def _persist_state(
+    directory: Path,
+    state: dict[str, Any],
+    contract: dict[str, Any],
+    *,
+    expected_revision: int | None = None,
+) -> None:
+    state_path = directory / "STATE.json"
+    persisted = read_json(state_path, default={})
+    if not isinstance(persisted, dict):
+        raise CampaignStateConflictError("Persisted Campaign state is invalid")
+    _validate_expected_revision(persisted, expected_revision)
+    current_revision = persisted.get("revision", 0)
+    state["revision"] = current_revision + 1
+    atomic_write_json(state_path, state)
     atomic_write_text(directory / "STATE.md", render_state_markdown(state, contract))
 
 
@@ -437,9 +823,11 @@ def render_state_markdown(state: dict[str, Any], contract: dict[str, Any]) -> st
     resources = state.get("resources", {})
     budget = contract.get("budget", {})
     forecast = state.get("forecast", {})
+    executor = state.get("executor", {}) if isinstance(state.get("executor"), dict) else {}
     next_actions = "\n".join(f"- {item}" for item in state.get("next_actions", [])) or "- None recorded"
     return f"""# Current Campaign State — {state.get("campaign_id", "unknown")}
 
+- Revision: **{state.get("revision", 0)}**
 - Status: **{state.get("status", "unknown")}**
 - Health: **{state.get("health", "unknown")}**
 - Phase: **{state.get("phase", "unknown")}**
@@ -452,14 +840,18 @@ def render_state_markdown(state: dict[str, Any], contract: dict[str, Any]) -> st
 - Budget gate: **{state.get("budget_status", "unknown")}**
 - Forecast: {forecast.get("finish_low")} – {forecast.get("finish_high")}
 - Hard stop: {forecast.get("hard_stop")}
+- Executor claim: `{executor.get("claim_id", "unclaimed")}`
+- Executor generation: {executor.get("generation", "n/a")}
+- Executor lease expires: `{executor.get("lease_expires_at", "n/a")}`
 - Last checkpoint: `{state.get("last_checkpoint_at", "unknown")}`
 
 ## Next actions
 
 {next_actions}
 
-This file is regenerated from `STATE.json`; edit state through
-`researchctl campaign checkpoint` so machine and human views stay consistent.
+This file is regenerated from `STATE.json`; use `researchctl campaign
+checkpoint` for observations and `researchctl campaign transition` for active
+lifecycle changes so machine and human views stay consistent.
 """
 
 
@@ -467,13 +859,21 @@ def render_goal_prompt(contract: dict[str, Any]) -> str:
     campaign_id = contract.get("campaign_id", "C-XXX")
     success = "\n".join(f"- {item}" for item in contract.get("success_conditions", []))
     withdrawal = "\n".join(f"- {item}" for item in contract.get("withdrawal_conditions", []))
+    counter = "\n".join(f"- {item}" for item in contract.get("counter_hypotheses", []))
+    gaming = "\n".join(f"- {item}" for item in contract.get("metric_gaming_risks", []))
+    reversal = "\n".join(f"- {item}" for item in contract.get("reversal_evidence", []))
+    exclusions = "\n".join(f"- {item}" for item in contract.get("adoption_exclusions", []))
     fixed = "\n".join(f"- {item}" for item in contract.get("fixed_constraints", []))
     forbidden = "\n".join(f"- {item}" for item in contract.get("forbidden_detours", []))
     budget = contract.get("budget", {})
+    owner = contract.get("owner", {}) if isinstance(contract.get("owner"), dict) else {}
+    profile = owner.get("runtime_profile") or owner.get("runtime") or "research_executor"
     return f"""# Goal Mode launch prompt — {campaign_id}
 
-Open a fresh Codex research session, select **GPT-5.6 Sol High**, load the
-`research-executor` Skill, and start this campaign with `/goal`.
+Open a fresh research session using runtime profile **{profile}**, load the
+`research-executor` Skill, and start this campaign with `/goal`. The profile is
+resolved from `.research-lab/config/agents.toml`; the Campaign state machine is
+not coupled to a particular provider model name.
 
 ```text
 /goal
@@ -484,7 +884,9 @@ strategy-conflict, invalidation, or resource-budget condition is reached.
 
 Read only the bounded `CONTEXT_PACK.md` and files explicitly referenced from it.
 Persist state with `context-checkpoint`; never rely on the conversation as the
-only copy of research state.
+only copy of research state. Use the `claim_id` returned by `campaign
+claim-executor` for every checkpoint, Job start/heartbeat/finish, and completion;
+an expired or superseded claim is fenced out.
 
 Goal:
 {contract.get("goal", "")}
@@ -497,6 +899,18 @@ Success conditions:
 
 Withdrawal conditions:
 {withdrawal}
+
+Competing explanations that must remain live:
+{counter}
+
+Metric-gaming and proxy risks:
+{gaming}
+
+Evidence that must reverse the recommendation:
+{reversal}
+
+Conditions where nominal success must not be adopted:
+{exclusions}
 
 Resource budget:
 - Wall clock: {budget.get("wall_hours", 0)} hours
@@ -562,6 +976,22 @@ Outcome: **{value.get("outcome")}**
 ## Executor recommendations (not decisions)
 
 {bullets("executor_recommendations")}
+
+## Assumptions still in force
+
+{bullets("assumptions")}
+
+## Unresolved questions
+
+{bullets("unresolved_questions")}
+
+## Unverified leads and anomalies
+
+{bullets("unverified_leads")}
+
+## Evidence that should reverse this recommendation
+
+{bullets("decision_reversal_evidence")}
 
 ## Resources actually used
 

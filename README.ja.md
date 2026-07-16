@@ -10,10 +10,10 @@ Research Planner
         ↓
 明確なCampaign Contract
         ↓
-GPT-5.6 Sol High /goal Research Executor
+設定済みResearch Executor runtime profile
 1つの目標を数時間〜1日、深く自律追求
         ↓
-証拠付きHandoff
+証拠にアンカーされたHandoff
         ↓
 Research Plannerが次を再計画
 ```
@@ -21,7 +21,16 @@ Research Plannerが次を再計画
 この遷移は会話の記憶ではなく、ResearchPlan、Campaign Contract、STATE、
 Handoffから`researchctl loop`が機械的に判定します。
 
-人間は研究判断の承認者ではありません。Codex Appとの会話では、研究所が正常か、今何をしているか、勝ち筋が強くなったか、時間・GPU・費用、次に何が起こるかを確認します。
+CampaignとResearchPlanはrevision付きの明示状態機械です。実行中の変更とJob操作は
+現在のExecutor claimへ束縛され、古いExecutorはfencing generationで拒否されます。
+科学的な主張は運用状態とは別に、証拠・前提・確信度・反証条件・失効・更新履歴を
+持つappend-onlyの`CLAIMS.jsonl`へ記録します。
+
+`researchctl loop`自体はAIプロセスを起動しません。永続状態から次の指示を決定し、
+Codex App Director、スケジュール済みタスク、またはprovider adapterが実行します。
+adapterにlaunch/status/cancelの実装がなければ、外部計算の停止は協調的な要求です。
+
+人間は実験ごとの逐次承認者ではありません。ただし、Mission、価値判断、データ・法的境界、ハード予算、外部公開の最終責任を持ちます。Codex Appとの会話では、研究所が正常か、今何をしているか、勝ち筋が強くなったか、時間・GPU・費用、次に何が起こるかを確認します。
 
 ## 開始方法
 
@@ -95,12 +104,16 @@ researchctl campaign validate C-001
 researchctl campaign finalize C-001
 researchctl campaign activate C-001
 researchctl context executor C-001
-researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --worktree <WORKTREE>
+$claim = researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --worktree <WORKTREE> | ConvertFrom-Json
+$claimId = $claim.executor.claim_id
 researchctl loop checkpoint
 researchctl loop instruction
 
-# 時間・GPU・実験・人間向け表示
-researchctl job register --campaign C-001 --name "quick validation" --resource GPU0 --planned-hours 1
+# revision付きcheckpoint、claimへ束縛したJob、認識上の主張
+researchctl campaign checkpoint C-001 --claim-id $claimId --expected-revision <REVISION> --patch checkpoint.json
+researchctl job register --campaign C-001 --name "quick validation" --resource GPU0 --planned-hours 1 --claim-id $claimId
+researchctl job start <JOB_ID> --claim-id $claimId
+researchctl claim-ledger record --statement "..." --confidence 0.4 --falsifier "..."
 researchctl brief
 researchctl visualize
 ```
@@ -123,6 +136,15 @@ researchctl repo adopt OWNER/NEW-RESEARCH-REPO --visibility private
 - ChatGPT/CodexのPluginsから導入する公式Codex Chrome拡張
 
 どちらでも、研究専用ChatGPT Projectを1つだけ作り、作成時にproject-only memoryを選びます。重要な質問の前にはモデル表示が完全一致で`Pro`になっていることを確認し、別モデルへ黙って切り替えません。Project URLと会話URLはGit管理外のローカル状態だけに保存します。
+
+## 安全性と成熟度
+
+外部計算の停止要求と実停止は別状態です。実行中Jobを`cancelled`にするには、
+停止確認と監査可能なPID・scheduler ID等の参照が必要です。有料計算は、停止と
+provider側料金計測を実装したコード登録済みadapterがない限りfail closedします。
+各backendは有料か無料かを明示し、有料backendでは正のJob費用見積もりを必須に
+するため、`planned_cost_jpy = 0`では安全検査を迂回できません。
+現時点のプロジェクト成熟度は**Alpha**です。
 
 ## 開発・検証
 

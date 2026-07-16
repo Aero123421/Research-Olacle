@@ -39,10 +39,13 @@ def run_self_test(paths: LabPaths) -> dict[str, Any]:
         ".research-lab/project-spec.json",
         ".research-lab/schema/campaign-contract.schema.json",
         ".research-lab/schema/campaign-handoff.schema.json",
+        ".research-lab/schema/epistemic-claim-event.schema.json",
         ".research-lab/schema/experiment.schema.json",
         "research/protocols/PLANNER_PROTOCOL.md",
         "research/protocols/EXECUTOR_PROTOCOL.md",
         "research/protocols/CONTEXT_BOUNDARIES.md",
+        "research/strategy/CLAIMS.jsonl",
+        "research/strategy/CLAIMS.md",
         "docs/INITIAL_INTERVIEW.md",
         "docs/UPSTREAM_REFERENCES.md",
         ".editorconfig",
@@ -74,6 +77,7 @@ def run_self_test(paths: LabPaths) -> dict[str, Any]:
         ".research-lab/init-answers.example.json",
         ".research-lab/schema/campaign-contract.schema.json",
         ".research-lab/schema/campaign-handoff.schema.json",
+        ".research-lab/schema/epistemic-claim-event.schema.json",
         ".research-lab/schema/experiment.schema.json",
     ]:
         path = paths.root / relative

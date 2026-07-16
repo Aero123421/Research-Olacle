@@ -47,3 +47,16 @@ This is a browser Skill, not an API adapter. Init chooses the Codex built-in
 browser or Chrome. Project and conversation URLs remain local. Exact visible
 model label `Pro` must be selected and verified after every critical navigation;
 no silent model fallback is allowed.
+
+## Runtime and compute control adapters
+
+Campaign Contracts refer to stable runtime profiles from
+`.research-lab/config/agents.toml`. Provider/model preferences are resolved by
+the adapter layer and must not become lifecycle state.
+
+Compute configuration declares resources and backend policy, but declarations do
+not prove that cancellation or metering exists. Paid compute remains disabled
+unless the named `control_adapter` is implemented, reviewed, and registered in
+code with both enforced cancellation and provider-side cost metering. A complete
+adapter must expose launch identity, status, cancellation, stop confirmation, and
+provider cost usage. Merely setting TOML capability labels is insufficient.

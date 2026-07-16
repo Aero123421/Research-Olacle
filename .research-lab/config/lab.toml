@@ -6,8 +6,9 @@ profile = "general"
 
 [research]
 planner_executor_separation = true
-human_scientific_approval_required = false
-campaign_owner = "gpt-5.6-sol-high-goal"
+routine_scientific_approval_required = false
+human_constitutional_authority_required = true
+campaign_owner_profile = "research_executor"
 
 [compute]
 minimum_free_disk_gb = 20

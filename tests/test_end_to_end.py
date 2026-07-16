@@ -23,7 +23,11 @@ from codex_research_harness.context import build_executor_context, build_planner
 from codex_research_harness.experiments import register_experiment
 from codex_research_harness.github import GitHubClient
 from codex_research_harness.jobs import finish_job, register_job, start_job, sync_campaign_resources
-from codex_research_harness.plans import create_research_plan, link_campaign, update_research_plan
+from codex_research_harness.plans import (
+    create_research_plan,
+    link_campaign,
+    transition_research_plan,
+)
 from codex_research_harness.utils import atomic_write_text
 from codex_research_harness.visualize import generate_all
 from tests.helpers import make_repo, ready_contract, valid_handoff
@@ -75,13 +79,17 @@ class EndToEndResearchLoopTests(unittest.TestCase):
                 target="https://www.kaggle.com/competitions/example",
                 deadline="2026-08-31T23:59:00+09:00",
             )
-            update_research_plan(
+            transition_research_plan(
                 paths,
                 "RP-001",
-                {
-                    "status": "researching",
-                    "current_action": "Inspect rules, EDA, baseline, domain landscape, and independent advisors",
-                },
+                status="researching",
+                current_action="Inspect rules, EDA, baseline, domain landscape, and independent advisors",
+            )
+            transition_research_plan(
+                paths,
+                "RP-001",
+                status="ready",
+                current_action="Launch the selected bounded Campaign",
             )
 
             question_dir = prepare_consultation(
@@ -129,6 +137,7 @@ class EndToEndResearchLoopTests(unittest.TestCase):
                 worktree="worktrees/C-001",
             )
             self.assertEqual(claimed["status"], "executing")
+            claim_id = claimed["executor"]["claim_id"]
 
             job = register_job(
                 paths,
@@ -138,11 +147,13 @@ class EndToEndResearchLoopTests(unittest.TestCase):
                 planned_hours=1.0,
                 backend="local_windows",
                 command_summary="python experiments/quick.py",
+                claim_id=claim_id,
             )
-            start_job(paths, job["job_id"])
+            start_job(paths, job["job_id"], claim_id=claim_id)
             finish_job(
                 paths,
                 job["job_id"],
+                claim_id=claim_id,
                 actual_wall_hours=0.75,
                 actual_gpu_hours=0.70,
             )
@@ -168,16 +179,14 @@ class EndToEndResearchLoopTests(unittest.TestCase):
 
             handoff = valid_handoff()
             handoff["resources_actual"] = {"wall_hours": 0.75, "gpu_hours": 0.70, "cost_jpy": 0}
-            completed = complete_campaign(paths, "C-001", handoff)
+            completed = complete_campaign(paths, "C-001", handoff, claim_id=claim_id)
             self.assertEqual(completed["status"], "completed")
 
-            update_research_plan(
+            transition_research_plan(
                 paths,
                 "RP-001",
-                {
-                    "status": "replanning",
-                    "current_action": "Synthesize C-001 evidence and select the next bounded Campaign",
-                },
+                status="replanning",
+                current_action="Synthesize C-001 evidence and select the next bounded Campaign",
             )
             planner_pack = build_planner_context(paths)
             planner_text = planner_pack.output.read_text(encoding="utf-8")

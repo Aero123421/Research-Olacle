@@ -19,8 +19,8 @@ vague research goal, and let Codex create the complete research environment.
 6. After final Doctor checks, Research Planner opens a Draft ResearchPlan PR,
    performs EDA/domain research/advisor consultation, and issues the first
    Campaign Contract.
-7. GPT-5.6 Sol High starts that Campaign in Goal Mode. Research continues without
-   routine human approval.
+7. A fresh session resolved from the configured Research Executor runtime profile starts
+   that Campaign. Research continues without routine human approval.
 
 ## 0. Do not improvise
 
@@ -248,8 +248,8 @@ researchctl campaign claim-executor C-001 --session-id <GOAL_SESSION_ID> --workt
 
 The claim is an atomic `ready → executing` transition and binds the Campaign to
 one session, owner, lease, and worktree. Only after the claim succeeds, open the
-fresh GPT-5.6 Sol High session, read
-`research/campaigns/C-001/GOAL_PROMPT.md`, and start `/goal`. A second live claim
+fresh session resolved from the Contract's Research Executor runtime profile, read
+`research/campaigns/C-001/GOAL_PROMPT.md`, and start the configured workflow. A second live claim
 is rejected.
 
 One Campaign gets one Executor context. The Executor may create hypotheses,

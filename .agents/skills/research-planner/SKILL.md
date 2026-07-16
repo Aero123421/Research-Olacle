@@ -119,6 +119,11 @@ Create a measurable Contract with:
 - in/out scope
 - success conditions
 - withdrawal conditions
+- credible counter-hypotheses
+- metric-gaming and proxy-failure risks
+- evidence that would reverse the decision
+- conditions where nominal success must not be adopted
+- an amendment policy for goal/evaluation/budget/constraint changes
 - fixed evaluation/constraints
 - wall/GPU/cost budget
 - checkpoint policy
@@ -135,18 +140,26 @@ Activate and build the bounded Executor pack:
 ```powershell
 researchctl campaign activate <ID>
 researchctl context executor <ID>
-researchctl campaign claim-executor <ID> --session-id <GOAL_SESSION_ID> --worktree <WORKTREE>
+$claim = researchctl campaign claim-executor <ID> --session-id <GOAL_SESSION_ID> --worktree <WORKTREE> | ConvertFrom-Json
+$claimId = $claim.executor.claim_id
 ```
 
-The claim must succeed before launch. Open a **fresh** GPT-5.6 Sol High session
-for the campaign and use the generated `GOAL_PROMPT.md`. Do not reuse a previous
-Executor session or launch a second session for an already claimed Campaign.
+The claim must succeed before launch. Open one **fresh** session resolved from
+the Contract's configured Research Executor runtime profile and use the
+generated `GOAL_PROMPT.md`. Do not reuse a previous Executor session or launch a
+second session for an already claimed Campaign. Preserve `$claimId`; every
+active checkpoint, Job mutation, transition, and completion requires it.
 
 ## Replanning after a Handoff
 
 Treat Executor recommendations as evidence, not authority. Re-read the whole
 strategy portfolio, update durable memory, and decide whether to continue,
 change direction, synthesize campaigns, or start a fresh Planner epoch.
+
+Update `research/strategy/CLAIMS.jsonl` through `researchctl claim-ledger`.
+Corroborate/refute only with linked evidence, record assumptions and falsifiers,
+expire time-sensitive claims, and supersede rather than silently rewrite prior
+beliefs.
 
 ## Outputs
 
